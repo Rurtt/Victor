@@ -207,3 +207,27 @@ class Memory:
             " WHERE problem.topic = ? GROUP BY tag ORDER BY n DESC, tag LIMIT ?",
             (topic, limit)).fetchall()
         return [(r["tag"], r["n"]) for r in rows]
+
+    def attempts(self, problem_id: int) -> list[dict]:
+        rows = self.db.execute(
+            "SELECT * FROM attempt WHERE problem_id = ? ORDER BY id", (problem_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def current_problem(self) -> dict | None:
+        """The problem the user is on: most recently touched and not finished."""
+        row = self.db.execute(
+            "SELECT * FROM problem WHERE status = 'working'"
+            " ORDER BY updated DESC, id DESC LIMIT 1").fetchone()
+        return dict(row) if row else None
+
+    def similar_problems(self, topic: str, tags: list[str], limit: int = 3) -> list[dict]:
+        """Past problems worth showing beside this one: same topic, or same mistake."""
+        placeholders = ",".join("?" * len(tags)) if tags else "NULL"
+        rows = self.db.execute(
+            "SELECT DISTINCT problem.* FROM problem"
+            " LEFT JOIN attempt ON attempt.problem_id = problem.id"
+            " LEFT JOIN failure ON failure.attempt_id = attempt.id"
+            f" WHERE problem.topic = ? OR failure.tag IN ({placeholders})"
+            " ORDER BY problem.updated DESC LIMIT ?",
+            (topic, *tags, limit)).fetchall()
+        return [dict(r) for r in rows]
