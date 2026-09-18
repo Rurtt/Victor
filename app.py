@@ -614,12 +614,25 @@ class JarvisApp(ctk.CTk):
         """
         target_id, granted = None, 0
         try:
-            target = self.memory.problem(reply.problem["slug"]) if reply.problem else problem
-            target_id = target["id"] if target else None
-            target_stored = target["rung"] if target else 0
-            target_attempts = self.memory.attempts(target_id) if target_id else []
-            granted = target_stored  # fallback if a later write fails before this is recomputed
+            if reply.problem:
+                # Upsert first: a slug the DB has never seen needs a real row —
+                # and id — before an attempt or a rung can be attached to it.
+                target = self.memory.problem(reply.problem["slug"])
+                target_stored = target["rung"] if target else 0  # upsert never touches rung
+                # A give-up is the enforcement record (spec 5.4): the model
+                # cannot revive a given-up problem by proposing "working" again.
+                sticky_given_up = target is not None and target.get("status") == "given-up"
+                status = ("given-up" if (override or sticky_given_up)
+                          else reply.problem.get("status", "working"))
+                target_id = self.memory.upsert_problem(
+                    reply.problem["slug"], reply.problem["title"],
+                    topic=reply.problem.get("topic"), status=status)
+            else:
+                target_id = problem["id"] if problem else None
+                target_stored = problem["rung"] if problem else 0
 
+            granted = target_stored  # fallback if a later write fails before this is recomputed
+            target_attempts = self.memory.attempts(target_id) if target_id else []
             if target_id and not override and (reply.attempt or verdict):
                 self.memory.add_attempt(target_id, prompt, verdict=verdict)
                 target_attempts = self.memory.attempts(target_id)
@@ -630,16 +643,7 @@ class JarvisApp(ctk.CTk):
                 target_stored, reply.rung, has_attempt=has_attempt, has_verdict=has_verdict)
 
             if reply.problem:
-                # A give-up is the enforcement record (spec 5.4): the model
-                # cannot revive a given-up problem by proposing "working" again.
-                sticky_given_up = target is not None and target.get("status") == "given-up"
-                status = ("given-up" if (override or sticky_given_up)
-                          else reply.problem.get("status", "working"))
-                problem_id = self.memory.upsert_problem(
-                    reply.problem["slug"], reply.problem["title"],
-                    topic=reply.problem.get("topic"), status=status)
-                target_id = problem_id  # now exists even for a slug the DB had never seen
-                self.memory.set_rung(problem_id, granted)
+                self.memory.set_rung(target_id, granted)
                 if reply.failures and target_attempts:
                     self.memory.add_failures(target_attempts[-1]["id"], reply.failures)
             elif override and problem:

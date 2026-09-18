@@ -456,6 +456,23 @@ class MentorModeTests(unittest.TestCase):
         self.assertEqual(len(attempts), 2)
         self.assertEqual(attempts[-1]["verdict"], "WA")
 
+    def test_an_attempt_on_a_brand_new_problem_is_recorded(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        reply = mentor.MentorReply("เข้าใจแล้ว มาดูกัน", 0,
+                                   {"slug": "new-th", "title": "New",
+                                    "topic": "dp", "status": "working"},
+                                   [], None, attempt=True)
+        with patch("app.ask_mentor", return_value=reply):
+            a.mentor_turn("นี่คือโค้ดของผม ได้ WA")
+
+        row = a.memory.problem("new-th")
+        attempts = a.memory.attempts(row["id"])
+        self.assertEqual(len(attempts), 1)
+        self.assertEqual(attempts[0]["verdict"], "WA")
+        self.assertEqual(row["rung"], 0)
+
     def test_a_turn_with_no_problem_has_no_rung_prefix(self):
         import mentor
         a = self.app
