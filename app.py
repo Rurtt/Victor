@@ -607,16 +607,19 @@ class JarvisApp(ctk.CTk):
         The reply may name a different (or brand new) problem than the one the
         ladder was clamped against before the call — that problem's own rung and
         attempts are what govern what it is allowed to receive, never the one the
-        conversation happened to be on. Returns (target_id, granted); target_id is
-        None when there is no problem to record anything against.
+        conversation happened to be on. All reads and writes share one guard, so a
+        DB error partway through cannot escape the turn. Returns (target_id,
+        granted); target_id is None when there is no problem to record anything
+        against.
         """
-        target = self.memory.problem(reply.problem["slug"]) if reply.problem else problem
-        target_id = target["id"] if target else None
-        target_stored = target["rung"] if target else 0
-        target_attempts = self.memory.attempts(target_id) if target_id else []
-        granted = target_stored  # fallback if a write below fails before this is recomputed
-
+        target_id, granted = None, 0
         try:
+            target = self.memory.problem(reply.problem["slug"]) if reply.problem else problem
+            target_id = target["id"] if target else None
+            target_stored = target["rung"] if target else 0
+            target_attempts = self.memory.attempts(target_id) if target_id else []
+            granted = target_stored  # fallback if a later write fails before this is recomputed
+
             if target_id and not override and (reply.attempt or verdict):
                 self.memory.add_attempt(target_id, prompt, verdict=verdict)
                 target_attempts = self.memory.attempts(target_id)
@@ -627,10 +630,15 @@ class JarvisApp(ctk.CTk):
                 target_stored, reply.rung, has_attempt=has_attempt, has_verdict=has_verdict)
 
             if reply.problem:
+                # A give-up is the enforcement record (spec 5.4): the model
+                # cannot revive a given-up problem by proposing "working" again.
+                sticky_given_up = target is not None and target.get("status") == "given-up"
+                status = ("given-up" if (override or sticky_given_up)
+                          else reply.problem.get("status", "working"))
                 problem_id = self.memory.upsert_problem(
                     reply.problem["slug"], reply.problem["title"],
-                    topic=reply.problem.get("topic"),
-                    status="given-up" if override else reply.problem.get("status", "working"))
+                    topic=reply.problem.get("topic"), status=status)
+                target_id = problem_id  # now exists even for a slug the DB had never seen
                 self.memory.set_rung(problem_id, granted)
                 if reply.failures and target_attempts:
                     self.memory.add_failures(target_attempts[-1]["id"], reply.failures)

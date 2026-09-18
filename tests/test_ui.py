@@ -406,6 +406,7 @@ class MentorModeTests(unittest.TestCase):
 
         self.assertEqual(a.memory.problem("new-th")["rung"], 0)
         self.assertEqual(a.memory.problem("old-th")["rung"], 3)
+        self.assertIn("[ขั้น 0/5", a.bubbles[-1][1].cget("text"))
 
     def test_a_no_slug_override_records_a_give_up_on_the_current_problem(self):
         import mentor
@@ -421,6 +422,22 @@ class MentorModeTests(unittest.TestCase):
         row = a.memory.problem("knapsack-th")
         self.assertEqual(row["status"], "given-up")
         self.assertEqual(row["rung"], 5)
+
+    def test_a_given_up_problem_stays_given_up_when_the_model_says_working(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        problem = a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp")
+        a.memory.set_rung(problem, 5)
+        a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp", status="given-up")
+
+        reply = mentor.MentorReply("ลองดูใหม่นะ", 1,
+                                   {"slug": "knapsack-th", "title": "Knapsack",
+                                    "topic": "dp", "status": "working"}, [], None)
+        with patch("app.ask_mentor", return_value=reply):
+            a.mentor_turn("ลองใหม่อีกครั้ง")
+
+        self.assertEqual(a.memory.problem("knapsack-th")["status"], "given-up")
 
     def test_an_attempt_with_a_typed_verdict_is_recorded(self):
         import mentor
