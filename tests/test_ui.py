@@ -348,6 +348,22 @@ class MentorModeTests(unittest.TestCase):
         self.assertIn(mentor.WITHHELD, shown)
         self.assertNotIn("ใช้เทคนิค DP", shown)
 
+    def test_an_over_rung_reply_with_no_problem_is_withheld_without_a_prefix(self):
+        """No current problem and the model names none either: target_id stays
+        None, so the withhold check must fall back to the pre-call ceiling
+        instead of trusting an unrecorded rung."""
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        reply = mentor.MentorReply("นี่คือเฉลยเต็ม ๆ", 5, None, [], None)
+        with patch("app.ask_mentor", return_value=reply):
+            a.mentor_turn("ขอเฉลยเลย")
+
+        shown = a.bubbles[-1][1].cget("text")
+        self.assertNotIn("นี่คือเฉลยเต็ม ๆ", shown)
+        self.assertEqual(shown, mentor.WITHHELD)  # no problem → no rung prefix
+        self.assertNotIn("นี่คือเฉลยเต็ม ๆ", "\n".join(t["text"] for t in a.history))
+
     def test_the_override_records_a_give_up_and_opens_the_last_rung(self):
         import mentor
         a = self.app

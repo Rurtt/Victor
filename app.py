@@ -598,10 +598,14 @@ class JarvisApp(ctk.CTk):
             return
 
         target_id, granted = self.record_mentor_reply(prompt, problem, reply, override, verdict)
-        if not override and target_id and reply.rung > granted:
+        # With no problem to attribute the reply to (no current problem, model
+        # named none, or a DB error left target_id unset), fall back to the
+        # pre-call ceiling instead of trusting an unrecorded "granted".
+        limit = granted if target_id else ceiling
+        if not override and reply.rung > limit:
             # The model wrote for a rung it was not granted. Never show or
-            # remember that text — only the honest label and a nudge back.
-            shown = f"{mentor.label(granted)} {mentor.WITHHELD}"
+            # remember that text — only an honest label, if any, and a nudge back.
+            shown = f"{mentor.label(granted)} {mentor.WITHHELD}" if target_id else mentor.WITHHELD
             self.remember("model", shown)
             self.history = self.history[-16:]
             self.add_message("JARVIS", shown)

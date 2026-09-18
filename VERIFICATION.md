@@ -2,7 +2,7 @@
 
 ## Passed
 
-- 167 automated tests (`python -m unittest discover -s tests`) across the policy
+- 168 automated tests (`python -m unittest discover -s tests`) across the policy
   layer, cloud request handling, speech cancellation, provider routing, the tray
   message loop, the wake-word turn, the mentor ladder and wiki flow, and real Tk
   desktop flows with simulated AI results.
@@ -10,15 +10,17 @@
   by one. History lives in `data/jarvis.db`; the sixteen-message cap now governs
   only what is sent to the model.
 - The hint ladder is enforced in Python: a model reply proposing rung 5 against a
-  stored rung of 1 is clamped to 2, rung 1 is refused without an attempt, and rung
-  4 is refused until an attempt carries a verdict. A problem a reply names starts
-  at rung 0 if new, and a given-up problem stays given-up even when a later reply
-  proposes "working" again. When the model's proposed rung exceeds what it was
-  actually granted, Jarvis withholds that reply's text outright — only the true
-  rung label and a fixed Thai nudge are shown or stored — instead of clamping the
-  label while still displaying the over-rung text. เปิดเฉลย only overrides when it
-  is the entire message, not a substring, so a negation like "อย่าเปิดเฉลยนะ" does
-  not record a give-up.
+  stored rung of 1 is clamped to 2 and its text withheld, rung 1 is refused
+  without an attempt, and rung 4 is refused until an attempt carries a verdict.
+  A problem a reply names starts at rung 0 if new, and a given-up problem stays
+  given-up even when a later reply proposes "working" again. Whenever the
+  model's proposed rung exceeds what it was actually granted — including a
+  turn with no problem attached, where the pre-call ceiling stands in for the
+  granted rung — Jarvis withholds that reply's text outright: only the true
+  rung label (when there is one) and a fixed Thai nudge are shown or stored,
+  never the over-rung text itself. เปิดเฉลย only overrides when it is the
+  entire message, not a substring, so a negation like "อย่าเปิดเฉลยนะ" does not
+  record a give-up.
 - An attempt is recorded either on the model's own flag, or — read from the
   user's text in Python, never from the model — a verdict word (`AC`/`WA`/`TLE`/
   `RE`) or C++-looking text (`#include` / `int main`, recorded `unsubmitted`).
