@@ -87,7 +87,21 @@ def _output(exe: Path, data: str, timeout: float, what: str) -> tuple[str, float
 
 def verify(candidate: dict, workdir: Path, *, small=300, large=8, keep_small=12):
     workdir = Path(workdir)
-    limit = float(candidate["time_limit"])
+    # Validate candidate structure before doing expensive work
+    required = SCHEMA["required"]
+    for key in required:
+        if key not in candidate:
+            raise Rejected(f"candidate missing required key: {key!r}")
+        if candidate[key] is None:
+            raise Rejected(f"candidate key {key!r} is None")
+    # Validate string fields are actually strings
+    for key in ["title", "slug", "statement", "reference_cpp", "brute_cpp", "gen_py"]:
+        if not isinstance(candidate[key], str):
+            raise Rejected(f"{key} must be a string, got {type(candidate[key]).__name__}")
+    try:
+        limit = float(candidate["time_limit"])
+    except (TypeError, ValueError) as exc:
+        raise Rejected(f"time_limit must be numeric, got {candidate['time_limit']!r}") from None
     reference = _compile(candidate["reference_cpp"], workdir, "reference")
     brute = _compile(candidate["brute_cpp"], workdir, "brute")
     gen = workdir / "gen.py"
@@ -130,6 +144,7 @@ def write_entry(bank_root: Path, candidate: dict, level: int, topic: str, tests)
 
 def main():
     from claude_brain import _request  # imported late: tests never need Claude
+    from brain import BrainError
 
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--level", type=int, choices=bank.CAMP1_LEVELS, required=True)
@@ -142,8 +157,12 @@ def main():
         existing = sorted(p.name for p in camp1.glob("*")) if camp1.exists() else []
         ask = (f"Level {args.level}, topic {args.topic}. "
                f"Existing slugs, do not repeat these ideas: {', '.join(existing) or 'none'}.")
-        candidate = _request(args.model, SYSTEM, SCHEMA, [{"type": "text", "text": ask}],
-                             effort="medium")
+        try:
+            candidate = _request(args.model, SYSTEM, SCHEMA, [{"type": "text", "text": ask}],
+                                 effort="medium")
+        except BrainError as exc:
+            print(f"rejected unknown: {exc}")
+            continue
         try:
             with tempfile.TemporaryDirectory(prefix="victor-bank-") as workdir:
                 tests = verify(candidate, Path(workdir))

@@ -78,3 +78,15 @@ class WriteEntryTests(unittest.TestCase):
             with self.assertRaises(make_problem.Rejected):
                 make_problem.write_entry(Path(d), candidate(slug="../evil"), 1,
                                          "implementation", [("1\n5\n", "5\n")])
+
+
+class MalformedCandidateTests(unittest.TestCase):
+    def test_missing_required_key_is_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(make_problem.Rejected):
+                make_problem.verify(candidate(brute_cpp=None), Path(d), small=1, large=1)
+
+    def test_bad_time_limit_is_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(make_problem.Rejected):
+                make_problem.verify(candidate(time_limit="not-a-number"), Path(d), small=1, large=1)
