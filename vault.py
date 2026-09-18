@@ -127,7 +127,7 @@ class Vault:
         existed = destination.exists()
         sources = 1
         if existed:
-            previous = destination.read_text(encoding="utf-8")
+            previous = destination.read_text(encoding="utf-8", errors="replace")
             match = re.search(r"^sources:\s*(\d+)", previous, re.MULTILINE)
             sources = int(match.group(1)) + 1 if match else 2
         destination.write_text(self.render(note, sources=sources, today=today),

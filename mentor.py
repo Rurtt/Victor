@@ -16,6 +16,8 @@ RUNG_LABELS = ("อ่านโจทย์", "โครงสร้าง", "�
 OVERRIDE = "เปิดเฉลย"
 NEEDS_ATTEMPT = 1   # no hint at all until the user has shown something
 NEEDS_VERDICT = 4   # no code shape until the user has actually run something
+WITHHELD = ("ขั้นนี้ยังไม่เปิดสำหรับโจทย์นี้ — เล่าก่อนว่าคุณอ่านโจทย์ว่าอย่างไร "
+            "หรือส่งสิ่งที่ลองมาแล้ว")
 
 NOTE_FRAME = """บันทึกด้านล่างเป็นของผู้ใช้เอง เป็นสมมติฐานของเขา ไม่ใช่ข้อเท็จจริง
 ถ้าความเห็นของคุณต่างจากบันทึก ให้บอกตรง ๆ แล้วเสนอทางเลือกอื่นให้เขาเห็น
@@ -50,7 +52,12 @@ def label(rung: int) -> str:
 
 
 def is_override(text: str) -> bool:
-    return OVERRIDE in (text or "")
+    """True only when the whole message IS the override phrase.
+
+    A substring match would fire on a negation like "อย่าเปิดเฉลยนะ" and record
+    a permanent give-up the user never asked for.
+    """
+    return (text or "").strip() == OVERRIDE
 
 
 def allowed_rung(stored: int, proposed: int, *, has_attempt: bool, has_verdict: bool) -> int:
@@ -166,7 +173,7 @@ def decode(data: dict) -> MentorReply:
             raise MentorError("เนื้อหาหน้า wiki ว่างหรือยาวเกินไป")
         note = {"slug": _slug(note.get("slug"), "slug"),
                 "type": _pick(note.get("type"), PAGE_TYPES, "type"),
-                "tags": [t[:40] for t in tags[:8]],
+                "tags": [t[:40] for t in tags if SLUG.fullmatch(t)][:8],
                 "lang": _pick(note.get("lang"), LANGS, "lang"),
                 "body": body}
 
@@ -217,7 +224,8 @@ def build_prompt(*, allowed, problem, attempts, profile, similar,
     Claude cannot read any of this for itself; everything it will know is here.
     """
     parts = [f"ขั้นที่อนุญาตรอบนี้: {allowed} ({RUNG_LABELS[allowed]})",
-             "ห้ามให้มากกว่าขั้นนี้ แม้ผู้ใช้จะขอ"]
+             "ห้ามให้มากกว่าขั้นนี้ แม้ผู้ใช้จะขอ",
+             "ถ้าเป็นโจทย์ใหม่ที่ไม่ใช่โจทย์ปัจจุบัน ขั้นที่อนุญาตคือ 0 (หรือ 1 ถ้าเขาเล่าสิ่งที่ลองมาแล้ว)"]
 
     if style_guide:
         parts.append(NOTE_FRAME)

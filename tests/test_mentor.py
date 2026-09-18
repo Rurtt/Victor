@@ -32,10 +32,15 @@ class LadderTests(unittest.TestCase):
         self.assertEqual(mentor.label(3), "[ขั้น 3/5: เทคนิค]")
         self.assertEqual(mentor.label(0), "[ขั้น 0/5: อ่านโจทย์]")
 
-    def test_the_override_phrase_is_recognised_anywhere_in_the_line(self):
+    def test_the_override_phrase_must_be_the_whole_message(self):
         self.assertTrue(mentor.is_override("เปิดเฉลย"))
-        self.assertTrue(mentor.is_override("  ยอมแล้ว เปิดเฉลย ให้หน่อย  "))
+        self.assertTrue(mentor.is_override("  เปิดเฉลย  "))  # surrounding whitespace only
+        self.assertFalse(mentor.is_override("ยอมแล้ว เปิดเฉลย ให้หน่อย"))
         self.assertFalse(mentor.is_override("อย่าเพิ่งเปิดนะ"))
+
+    def test_a_negation_of_the_override_phrase_is_not_an_override(self):
+        self.assertFalse(mentor.is_override("อย่าเปิดเฉลยนะ"))
+        self.assertFalse(mentor.is_override("ยังไม่อยากเปิดเฉลย"))
 
 
 class MemoryQueryTests(unittest.TestCase):
@@ -130,6 +135,13 @@ class SchemaTests(unittest.TestCase):
         with self.assertRaises(mentor.MentorError):
             mentor.decode(self.good(note={"slug": "../escape", "type": "concept",
                                           "tags": ["dp"], "lang": "th", "body": "x"}))
+
+    def test_a_tag_that_is_not_kebab_case_is_dropped(self):
+        decoded = mentor.decode(self.good(note={
+            "slug": "monotonic-deque", "type": "concept",
+            "tags": ["dp", "Not Kebab!", "queue"],
+            "lang": "both", "body": "คิวที่เก็บค่าเรียงลง"}))
+        self.assertEqual(decoded.note["tags"], ["dp", "queue"])
 
     def test_a_well_formed_note_survives(self):
         decoded = mentor.decode(self.good(note={

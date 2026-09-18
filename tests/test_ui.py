@@ -10,6 +10,7 @@ import app
 from app import MAX_ROWS, JarvisApp
 from brain import Reply
 from local_store import LocalStore
+from thai import tr
 
 
 class DesktopFlowTests(unittest.TestCase):
@@ -319,7 +320,33 @@ class MentorModeTests(unittest.TestCase):
             a.mentor_turn("ขอโค้ดเลย")
 
         self.assertEqual(a.memory.problem("knapsack-th")["rung"], 2)
-        self.assertIn("[ขั้น 2/5", a.bubbles[-1][1].cget("text"))
+        shown = a.bubbles[-1][1].cget("text")
+        self.assertIn("[ขั้น 2/5", shown)
+        # The model proposed rung 5 but was only granted 2 — the over-rung text
+        # itself must never reach the screen or the conversation history.
+        self.assertNotIn("เฉลยเต็ม ๆ", shown)
+        self.assertIn(mentor.WITHHELD, shown)
+        self.assertNotIn("เฉลยเต็ม ๆ", "\n".join(t["text"] for t in a.history))
+
+    def test_an_over_rung_reply_on_the_same_problem_is_withheld(self):
+        """Same-problem case: the reply names the problem already in play, but
+        proposes a rung it hasn't earned yet (no attempt on record)."""
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp")
+
+        reply = mentor.MentorReply("ใช้เทคนิค DP", 3,
+                                   {"slug": "knapsack-th", "title": "Knapsack",
+                                    "topic": "dp", "status": "working"}, [], None)
+        with patch("app.ask_mentor", return_value=reply):
+            a.mentor_turn("บอกเทคนิคหน่อย")
+
+        self.assertEqual(a.memory.problem("knapsack-th")["rung"], 0)
+        shown = a.bubbles[-1][1].cget("text")
+        self.assertIn("[ขั้น 0/5", shown)
+        self.assertIn(mentor.WITHHELD, shown)
+        self.assertNotIn("ใช้เทคนิค DP", shown)
 
     def test_the_override_records_a_give_up_and_opens_the_last_rung(self):
         import mentor
@@ -406,7 +433,13 @@ class MentorModeTests(unittest.TestCase):
 
         self.assertEqual(a.memory.problem("new-th")["rung"], 0)
         self.assertEqual(a.memory.problem("old-th")["rung"], 3)
-        self.assertIn("[ขั้น 0/5", a.bubbles[-1][1].cget("text"))
+        shown = a.bubbles[-1][1].cget("text")
+        self.assertIn("[ขั้น 0/5", shown)
+        # Moving to a new problem must never leak a rung-5 solution under a
+        # rung-0 label.
+        self.assertNotIn("นี่คือโจทย์ใหม่ เฉลยเลย", shown)
+        self.assertIn(mentor.WITHHELD, shown)
+        self.assertNotIn("นี่คือโจทย์ใหม่ เฉลยเลย", "\n".join(t["text"] for t in a.history))
 
     def test_a_no_slug_override_records_a_give_up_on_the_current_problem(self):
         import mentor
@@ -482,12 +515,13 @@ class MentorModeTests(unittest.TestCase):
             a.mentor_turn("สวัสดีครับ")
         self.assertEqual(a.bubbles[-1][1].cget("text"), "ลองอ่านโจทย์อีกที")
 
-    def test_a_memory_error_during_recording_still_shows_the_reply(self):
+    def test_a_memory_error_during_recording_still_shows_a_reply(self):
         import mentor
         from memory import MemoryError as MemErr
         a = self.app
         a.mentor_mode = True
-        a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp")
+        problem = a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp")
+        a.memory.add_attempt(problem, "int main(){}", verdict="WA")  # earns rung 1
         reply = mentor.MentorReply("นี่คือคำตอบ", 1,
                                    {"slug": "knapsack-th", "title": "Knapsack",
                                     "topic": "dp", "status": "working"}, [], None)
@@ -496,20 +530,23 @@ class MentorModeTests(unittest.TestCase):
             a.mentor_turn("ลองดูอีกที")
         kinds = [kind for _row, _text, kind in a.bubbles]
         self.assertIn("ERROR", kinds)
+        # The rung was earned (attempt with a verdict on record), so this is an
+        # honest reply, not an over-rung one — the DB failure alone must not
+        # withhold text the user was entitled to.
         self.assertIn("นี่คือคำตอบ", a.bubbles[-1][1].cget("text"))
 
     def test_offer_note_warns_when_the_page_already_exists(self):
-        import mentor
         a = self.app
         a.study = Mock()
-        a.study.page.return_value = "---\nname: dp-intro\n---\n\nold content\n"
+        a.study.wiki = Path(self.temp.name)
+        (a.study.wiki / "dp-intro.md").write_text("old content", encoding="utf-8")
         a.study.render.return_value = "---\nname: dp-intro\n---\n\nnew content\n"
         note = {"slug": "dp-intro", "type": "concept", "tags": ["dp"], "lang": "th",
                 "body": "new content"}
         with patch("app.messagebox.askyesno", return_value=False) as fake_ask:
             a.offer_note(note)
         message = fake_ask.call_args.args[1]
-        self.assertIn("This page already exists and will be replaced.", message)
+        self.assertIn(tr("This page already exists and will be replaced."), message)
 
 
 if __name__ == "__main__":

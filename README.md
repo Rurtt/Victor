@@ -132,6 +132,8 @@ Toggle **Mentor mode (POSN)** in the sidebar to turn Jarvis into a coach for
 your POSN Camp 2 problems instead of a general assistant. It proposes no PC
 actions — the schema it answers in has no `actions` key — and every turn is
 typed; the voice and screen-control features above are unrelated to it.
+Mentor mode needs a Claude model (`sonnet`, `haiku` or `opus`); with a Gemini
+model selected, every mentor turn errors instead of replying.
 
 Coaching moves through six rungs, one at a time. Jarvis can never hand out
 more than one rung above where the current problem already stands, and two
@@ -151,17 +153,27 @@ like C++ (`#include` / `int main`, recorded as `unsubmitted`). A model-flagged
 attempt unlocks the next rung starting on your *next* message, not the one
 that triggered it. Known false positive: a question that merely mentions a
 verdict word (e.g. "TLE คืออะไร") is recorded as an attempt carrying that
-verdict.
+verdict. The verdict word must stand alone (a word boundary on both sides) and
+be uppercase, so a verdict word glued directly onto Thai script, or written in
+lowercase, is not detected at all.
 
 Each reply is filed against the problem it names, not necessarily the one the
 conversation was already on — naming a new problem starts it at rung 0, and a
 problem already given up on stays given-up even if a later reply proposes
 "working" again. Replies about a problem are prefixed `[ขั้น n/5: …]`;
-a general turn that names no problem carries no prefix.
+a general turn that names no problem carries no prefix. If the model writes a
+reply for a rung higher than the one it was actually granted — most often
+right after switching to a new problem — Jarvis withholds that text entirely:
+the label still shows the true rung, but the body is replaced with a short
+Thai nudge to say more about the problem, and nothing over-rung is ever
+stored in history either.
 
-Type **เปิดเฉลย** to jump straight to rung 5. It also marks the current
-problem given-up — the record that you didn't reach the answer on your own —
-and that can't be undone by continuing to chat about the same problem.
+Type **เปิดเฉลย** — and nothing else in the message — to jump straight to
+rung 5. The check is exact, not a substring match, so a sentence that merely
+contains the phrase (including a negation like "อย่าเปิดเฉลยนะ") does not
+trigger it. เปิดเฉลย also marks the current problem given-up — the record
+that you didn't reach the answer on your own — and that can't be undone by
+continuing to chat about the same problem.
 
 Jarvis's study wiki lives at `D:\Jarvis\Study`, reusing the page schema from
 your existing `D:\Jarvis\Luk Nong Pong` vault. When a reply proposes a note,
@@ -244,11 +256,13 @@ needs approval. Every send appears in the Jarvis chat.
   stored in `data/gemini-key.dpapi`, encrypted for your Windows account (DPAPI).
   It is never included in logs, prompts or PC actions. Other software running under your
   Windows account can still potentially inspect process memory.
-- Chat is held in memory and cleared on exit or New conversation. Recent chat
-  context is sent with follow-up messages (up to 16 entries and a size budget).
-  Windows itself may page process memory to disk.
+- Conversation history is stored in `data/jarvis.db` on this PC and survives a
+  restart. New conversation starts a fresh chat but keeps earlier ones in the
+  database; delete `data/jarvis.db` to erase it. Recent chat context is sent
+  with follow-up messages (up to 16 entries and a size budget), not the whole
+  database.
 - Google receives your sent messages and selected summary text. Its own retention
-  and data-use policies apply independently of this app's memory-only chat.
+  and data-use policies apply independently of how this app stores your chat.
   Unpaid services may use input/output for improvement and human review, with
   regional exceptions. Review [Google's terms](https://ai.google.dev/gemini-api/terms).
 - Screen capture happens only during an approved screen-control task. No clipboard

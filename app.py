@@ -215,7 +215,7 @@ class JarvisApp(ctk.CTk):
         if self.mentor_mode:
             self.mentor_switch.select()
         self.button(self.sidebar, "Open program folder", self.open_program_folder).pack(side="bottom", fill="x", padx=14, pady=16)
-        self.label(self.sidebar, "Chat stays in memory. Sent messages go to your AI provider.", T.HINT, T.MUTED,
+        self.label(self.sidebar, "Chat history is saved on this PC.", T.HINT, T.MUTED,
                    justify="left").pack(side="bottom", anchor="w", padx=18, pady=(0, 12))
         self.connection = self.label(self.sidebar, "", T.LABEL, T.MUTED, wraplength=180, justify="left")
         self.connection.pack(side="bottom", anchor="w", padx=18, pady=(0, 8))
@@ -559,14 +559,21 @@ class JarvisApp(ctk.CTk):
 
     def mentor_turn(self, prompt: str):
         """One coaching turn: gather in Python, ask once, clamp, then store."""
-        problem = self.memory.current_problem()
-        attempts = self.memory.attempts(problem["id"]) if problem else []
-        topic = (problem or {}).get("topic") or ""
-        profile = self.memory.profile(topic) if topic else []
-        tags = [tag for tag, _ in profile]
-        similar = self.memory.similar_problems(topic, tags) if topic else []
-        style_guide = self.study.style_guide() if self.study else ""
-        pages = self.study.select(topic, tags) if (self.study and topic) else []
+        # Remembered before any read below can fail: the model needs to see this
+        # turn, and the user's own message is never lost to a DB or vault error.
+        self.remember("user", prompt)
+        try:
+            problem = self.memory.current_problem()
+            attempts = self.memory.attempts(problem["id"]) if problem else []
+            topic = (problem or {}).get("topic") or ""
+            profile = self.memory.profile(topic) if topic else []
+            tags = [tag for tag, _ in profile]
+            similar = self.memory.similar_problems(topic, tags) if topic else []
+            style_guide = self.study.style_guide() if self.study else ""
+            pages = self.study.select(topic, tags) if (self.study and topic) else []
+        except (MemoryError, sqlite3.Error, VaultError, OSError) as exc:
+            self.add_message("ERROR", str(exc))
+            return
 
         override = mentor.is_override(prompt)
         stored = (problem or {}).get("rung", 0)
@@ -579,9 +586,6 @@ class JarvisApp(ctk.CTk):
         ceiling = mentor.MAX_RUNG if override else mentor.allowed_rung(
             stored, mentor.MAX_RUNG, has_attempt=has_attempt, has_verdict=has_verdict)
 
-        # Remembered before the call: the model needs to see this turn, and if the
-        # call below fails, the user's own message is not lost.
-        self.remember("user", prompt)
         text = mentor.build_prompt(
             allowed=ceiling, problem=problem, attempts=attempts, profile=profile,
             similar=similar, style_guide=style_guide, pages=pages,
@@ -594,10 +598,20 @@ class JarvisApp(ctk.CTk):
             return
 
         target_id, granted = self.record_mentor_reply(prompt, problem, reply, override, verdict)
+        if not override and target_id and reply.rung > granted:
+            # The model wrote for a rung it was not granted. Never show or
+            # remember that text — only the honest label and a nudge back.
+            shown = f"{mentor.label(granted)} {mentor.WITHHELD}"
+            self.remember("model", shown)
+            self.history = self.history[-16:]
+            self.add_message("JARVIS", shown)
+            self.last_reply = shown
+            return
         shown = f"{mentor.label(granted)} {reply.text}" if target_id else reply.text
         self.remember("model", shown)
         self.history = self.history[-16:]
         self.add_message("JARVIS", shown)
+        self.last_reply = shown
         if reply.note and self.study:
             self.offer_note(reply.note)
 
@@ -663,11 +677,12 @@ class JarvisApp(ctk.CTk):
         try:
             preview = self.study.render(note)
             message = f"{note['slug']} ({note['type']})\n\n{preview[:600]}"
-            if self.study.page(note["slug"]):
+            if (self.study.wiki / f"{note['slug']}.md").exists():
                 message = tr("This page already exists and will be replaced.") + "\n" + message
             if not messagebox.askyesno(tr("Save to wiki?"), message, parent=self):
                 return
-            written = self.study.save(note, note["body"][:120])
+            description = (note["body"].strip().splitlines() or [""])[0][:120]
+            written = self.study.save(note, description)
             self.add_message("STATUS", tr("Saved to wiki: ") + str(written))
         except (VaultError, OSError) as exc:
             self.add_message("ERROR", tr("Could not save to wiki: ") + str(exc))
@@ -689,6 +704,7 @@ class JarvisApp(ctk.CTk):
         if self.mentor_mode and not summary:
             self.busy = False
             self.send_button.configure(state="normal")
+            self.hands_free = False
             self.mentor_turn(prompt)
             self.set_status("Ready • Microphone off")
             return
