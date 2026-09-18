@@ -201,5 +201,39 @@ class BudgetTests(unittest.TestCase):
         self.assertIn("ยังไม่มีข้อมูล", prompt)
 
 
+class RoutingTests(unittest.TestCase):
+    def test_a_mentor_turn_asks_for_the_mentor_schema_and_higher_effort(self):
+        import claude_brain
+        captured = {}
+
+        def fake_request(model, system, schema, content, cancelled=None, effort="low"):
+            captured.update(model=model, system=system, schema=schema,
+                            content=content, effort=effort)
+            return {"reply": "ลองดู n ก่อน", "rung": 1}
+
+        with patch.object(claude_brain, "_request", fake_request):
+            decoded = claude_brain.ask_mentor("sonnet", "ข้อนี้ทำไงดี")
+
+        self.assertEqual(decoded.text, "ลองดู n ก่อน")
+        self.assertEqual(captured["schema"], mentor.MENTOR_SCHEMA)
+        self.assertNotIn("actions", captured["schema"]["properties"])
+        self.assertIn("POSN", captured["system"])
+        self.assertEqual(captured["effort"], "medium")
+        self.assertEqual(captured["content"], [{"type": "text", "text": "ข้อนี้ทำไงดี"}])
+
+    def test_a_malformed_mentor_reply_is_refused_not_displayed(self):
+        import claude_brain
+        with patch.object(claude_brain, "_request",
+                          lambda *a, **k: {"reply": "x", "rung": 99}):
+            with self.assertRaises(mentor.MentorError):
+                claude_brain.ask_mentor("sonnet", "ข้อนี้ทำไงดี")
+
+    def test_mentor_mode_refuses_a_gemini_model(self):
+        import engine
+        from brain import BrainError
+        with self.assertRaises(BrainError):
+            engine.ask_mentor("gemini-3.8-flash", "ข้อนี้ทำไงดี")
+
+
 if __name__ == "__main__":
     unittest.main()
