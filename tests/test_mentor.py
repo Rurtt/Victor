@@ -87,5 +87,57 @@ class MemoryQueryTests(unittest.TestCase):
                 memory.close()
 
 
+class SchemaTests(unittest.TestCase):
+    def good(self, **extra):
+        return {"reply": "ลองดูที่ n ก่อน", "rung": 2, **extra}
+
+    def test_a_minimal_reply_decodes(self):
+        decoded = mentor.decode(self.good())
+        self.assertEqual(decoded.text, "ลองดูที่ n ก่อน")
+        self.assertEqual(decoded.rung, 2)
+        self.assertIsNone(decoded.problem)
+        self.assertEqual(decoded.failures, [])
+        self.assertIsNone(decoded.note)
+
+    def test_a_reply_can_never_carry_pc_actions(self):
+        self.assertNotIn("actions", mentor.MENTOR_SCHEMA["properties"])
+        decoded = mentor.decode(self.good(actions=[{"name": "open_app"}]))
+        self.assertFalse(hasattr(decoded, "actions"))
+
+    def test_an_unknown_topic_is_refused(self):
+        with self.assertRaises(mentor.MentorError):
+            mentor.decode(self.good(problem={"slug": "x", "title": "X",
+                                             "topic": "quantum", "status": "working"}))
+
+    def test_an_unknown_failure_tag_is_refused(self):
+        with self.assertRaises(mentor.MentorError):
+            mentor.decode(self.good(failures=[{"tag": "vibes-were-off"}]))
+
+    def test_an_unknown_page_type_is_refused(self):
+        with self.assertRaises(mentor.MentorError):
+            mentor.decode(self.good(note={"slug": "s", "type": "blogpost",
+                                          "tags": ["dp"], "lang": "th", "body": "x"}))
+
+    def test_a_rung_outside_the_ladder_is_refused(self):
+        with self.assertRaises(mentor.MentorError):
+            mentor.decode({"reply": "x", "rung": 9})
+
+    def test_a_missing_reply_is_refused(self):
+        with self.assertRaises(mentor.MentorError):
+            mentor.decode({"rung": 1})
+
+    def test_a_slug_that_looks_like_a_path_is_refused(self):
+        with self.assertRaises(mentor.MentorError):
+            mentor.decode(self.good(note={"slug": "../escape", "type": "concept",
+                                          "tags": ["dp"], "lang": "th", "body": "x"}))
+
+    def test_a_well_formed_note_survives(self):
+        decoded = mentor.decode(self.good(note={
+            "slug": "monotonic-deque", "type": "concept", "tags": ["dp", "queue"],
+            "lang": "both", "body": "คิวที่เก็บค่าเรียงลง"}))
+        self.assertEqual(decoded.note["slug"], "monotonic-deque")
+        self.assertEqual(decoded.note["type"], "concept")
+
+
 if __name__ == "__main__":
     unittest.main()
