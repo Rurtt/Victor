@@ -1,5 +1,5 @@
 <#
-    Installs the pinned offline Thai speech runtime for Jarvis.
+    Installs the pinned offline Thai speech runtime for Victor.
 
     Everything is verified against hard-coded SHA-256 values before it is used.
     Nothing here is downloaded at voice time; local_voice.py refuses to run
@@ -48,7 +48,7 @@ if ((Test-Path $Manifest) -and -not $Force) {
     exit 0
 }
 
-$stage = Join-Path ([IO.Path]::GetTempPath()) ("jarvis-voice-" + [Guid]::NewGuid().ToString('N'))
+$stage = Join-Path ([IO.Path]::GetTempPath()) ("victor-voice-" + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
 try {
     # --- whisper.cpp CPU binaries -------------------------------------------

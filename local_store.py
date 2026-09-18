@@ -50,8 +50,8 @@ def _crypt(raw: bytes, *, decrypt=False) -> bytes:
 def _write_atomic(path: Path, data: bytes):
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.parent.is_symlink() or path.parent.is_junction():
-        raise StorageError("โฟลเดอร์ข้อมูลต้องอยู่ภายในโฟลเดอร์ Jarvis")
-    fd, temp = tempfile.mkstemp(prefix=".jarvis-", dir=path.parent)
+        raise StorageError("โฟลเดอร์ข้อมูลต้องอยู่ภายในโฟลเดอร์ Victor")
+    fd, temp = tempfile.mkstemp(prefix=".victor-", dir=path.parent)
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(data)

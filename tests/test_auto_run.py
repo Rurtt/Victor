@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from actions import AUTO_RUN, PolicyError, validate
-from app import JarvisApp
+from app import VictorApp
 from brain import Reply
 from local_store import LocalStore
 
@@ -29,7 +29,7 @@ class TierMembershipTests(unittest.TestCase):
 class AutoRunFlowTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.app = JarvisApp(store=LocalStore(Path(self.temp.name)))
+        self.app = VictorApp(store=LocalStore(Path(self.temp.name)))
         self.app.withdraw()
         self.app.key = "test-key"
         self.runner = Mock(return_value="Sent to Windows: skip track")

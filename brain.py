@@ -21,7 +21,7 @@ BUSY = "Gemini is busy (HTTP {code}). Try again shortly or change the model in A
 RETRYING = "Gemini is busy, retrying ({n}/{total})…"
 UNEXPECTED_HTTP = "Gemini returned HTTP {code}. Try again later."
 
-SYSTEM = """You are Jarvis, the user's thoughtful personal assistant. Default to natural Thai.
+SYSTEM = """You are Victor, the user's thoughtful personal assistant. Default to natural Thai.
 The user normally speaks Thai; understand Thai app names and mixed Thai/English.
 Be warm,
 clear, practical and concise. Use the user's language. Help discuss, explain,
@@ -32,7 +32,7 @@ for anything about playing, pausing, skipping or volume in ANY player, including
 and YouTube. It is one keystroke and needs no confirmation. Never use control_screen to
 play, pause or change a track. open_app spotify opens Spotify.
 control_screen: when the user wants something done in apps or websites that the
-other actions cannot do; goal = one clear task in Thai. Jarvis then sees the
+other actions cannot do; goal = one clear task in Thai. Victor then sees the
 screen step by step. discord_send: only to a target from the user's Discord list,
 one line of text. If the user did not name the target or text, ask first.
 Proposals require the user's separate click in the desktop UI. Never claim you
@@ -195,7 +195,7 @@ def synthesize(key: str, text: str, *, on_retry=None, cancelled=None) -> bytes:
         raise BrainError("Gemini ไม่ได้ส่งเสียงกลับมา ลองอีกครั้ง") from None
 
 
-SCREEN_SYSTEM = """You are Jarvis operating the user's Windows PC one step at a time. Reply in Thai.
+SCREEN_SYSTEM = """You are Victor operating the user's Windows PC one step at a time. Reply in Thai.
 You get the user's goal, the steps already done, and a fresh screenshot of the primary monitor.
 Return exactly one next step. x and y are 0-1000, normalized to screenshot width and height,
 pointing at the center of the target. Kinds: click, double_click, right_click,

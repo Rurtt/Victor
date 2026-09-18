@@ -1,4 +1,4 @@
-"""Official Claude Code subscription adapter; Claude proposes, Jarvis executes."""
+"""Official Claude Code subscription adapter; Claude proposes, Victor executes."""
 from __future__ import annotations
 
 import base64
@@ -39,7 +39,7 @@ def subscription_environment() -> dict:
 def _run(args: list[str], payload: bytes = b"", *, cancelled=lambda: False, timeout=90) -> bytes:
     """Bound output on disk and reap the one child on every exit path."""
     deadline = time.monotonic() + timeout
-    with tempfile.TemporaryDirectory(prefix="jarvis-claude-") as cwd:
+    with tempfile.TemporaryDirectory(prefix="victor-claude-") as cwd:
         with tempfile.TemporaryFile() as source, tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
             source.write(payload)
             source.seek(0)
@@ -87,7 +87,7 @@ def check_login(*, cancelled=lambda: False) -> None:
         except (ValueError, TypeError):
             raise BrainError("ตรวจการเข้าสู่ระบบ Claude ไม่สำเร็จ") from None
         if not status.get("loggedIn") or status.get("authMethod") != "claude.ai":
-            raise BrainError("เปิด Claude Code แล้วลงชื่อเข้าใช้ด้วยสมาชิก Claude — Jarvis ไม่ใช้ API key ในโหมดนี้")
+            raise BrainError("เปิด Claude Code แล้วลงชื่อเข้าใช้ด้วยสมาชิก Claude — Victor ไม่ใช้ API key ในโหมดนี้")
         _AUTH_OK_UNTIL = time.monotonic() + 60
 
 

@@ -155,7 +155,7 @@ def transcribe(wav: bytes, cancelled=lambda: False) -> str:
         raise VoiceCancelled("ยกเลิกแล้ว")
     pcm = _pcm(wav)
     _verify_runtime()
-    with tempfile.TemporaryDirectory(prefix="jarvis-voice-") as directory:
+    with tempfile.TemporaryDirectory(prefix="victor-voice-") as directory:
         audio = Path(directory) / "command.wav"
         result = Path(directory) / "transcript"
         # Rewrite only validated PCM, dropping arbitrary source metadata/chunks.
@@ -215,11 +215,11 @@ class WakeListener:
                                            stderr=subprocess.STDOUT, text=True, encoding="utf-8",
                                            errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             except OSError as exc:
-                detail = "เริ่มการฟัง Jarvis ไม่ได้: " + str(exc)
+                detail = "เริ่มการฟัง Victor ไม่ได้: " + str(exc)
                 threading.Thread(target=self.callback, args=("error", detail), daemon=True).start()
                 return
             self._process = process
-            self._thread = threading.Thread(target=self._read, args=(process,), daemon=True, name="jarvis-wake")
+            self._thread = threading.Thread(target=self._read, args=(process,), daemon=True, name="victor-wake")
             self._thread.start()
 
     def _read(self, process):
@@ -240,7 +240,7 @@ class WakeListener:
                 if active:
                     self._process = None
             if active:
-                self.callback("error", detail or "การฟัง Jarvis หยุดทำงาน กรุณาตรวจสอบไมโครโฟนและภาษาอังกฤษของ Windows")
+                self.callback("error", detail or "การฟัง Victor หยุดทำงาน กรุณาตรวจสอบไมโครโฟนและภาษาอังกฤษของ Windows")
         finally:
             process.stdout.close()
 

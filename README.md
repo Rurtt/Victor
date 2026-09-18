@@ -1,14 +1,16 @@
-# Jarvis — your personal assistant, v0.1
+# Victor — your personal assistant, v0.1
+
+(formerly Jarvis — renamed only; no behavior changed.)
 
 A Windows desktop prototype built for this workspace. Chat with Claude or Gemini,
 dictate a message, listen to replies, summarize chosen text, and approve a small
 set of PC actions. It waits in the system tray and can answer the wake word
-"Jarvis" hands-free. This is a new independent implementation; it does not run or
+"Victor" hands-free. This is a new independent implementation; it does not run or
 depend on Mark-LIII.
 
 ## Start
 
-1. Double-click **Start Jarvis.cmd** in this folder.
+1. Double-click **Start Victor.cmd** in this folder.
 2. Open **AI settings** and pick a model.
    - `sonnet`, `haiku` or `opus` use the **Claude Code** you are already signed
      into. No API key. Requests count against your Claude plan.
@@ -16,12 +18,12 @@ depend on Mark-LIII.
 3. Type a message and click **Send**, or press **Ctrl+Enter**.
 
 The default is `sonnet`. Claude mode needs `claude.exe` on your PATH and a
-`claude.ai` login — check with `claude auth status`. Jarvis calls it with
+`claude.ai` login — check with `claude auth status`. Victor calls it with
 `--safe-mode` and no tools, so Claude can only answer and propose actions; every
 PC action still needs your click here.
 
 Requires Windows and Python 3.12+ with Tkinter, Pillow (`pip install pillow`, used
-for screenshots) and customtkinter 5.2.2 (the interface). **Start Jarvis.cmd**
+for screenshots) and customtkinter 5.2.2 (the interface). **Start Victor.cmd**
 installs customtkinter automatically the first time. If that fails, run
 `py -m pip install customtkinter==5.2.2`, or run `python app.py` in this folder to
 see startup errors. Do not run as administrator.
@@ -35,7 +37,7 @@ makes the first API request. A paid API account may incur usage charges.
 
 - “Help me plan my afternoon.”
 - “Explain this paragraph in simple terms: …”
-- “Draft a polite reply to this email: …” (Jarvis drafts; you send.)
+- “Draft a polite reply to this email: …” (Victor drafts; you send.)
 - “Open Calculator.”
 - “Open https://www.wikipedia.org.”
 - “Search the web for beginner guitar lessons.”
@@ -49,15 +51,15 @@ They are never automatically opened or executed.
 
 ## Background mode and the wake word
 
-Closing the window hides Jarvis in the system tray instead of quitting. Double-click
+Closing the window hides Victor in the system tray instead of quitting. Double-click
 the tray icon to bring it back; right-click for **Open**, **Listen once**,
 **Wake on/off**, **Stop / mute** and **Exit**. Only **Exit** ends the program.
-Starting Jarvis twice just reopens the first copy's window.
+Starting Victor twice just reopens the first copy's window.
 
-The **คำเรียก "Jarvis"** switch turns on wake-word listening. Detection runs
+The **คำเรียก "Victor"** switch turns on wake-word listening. Detection runs
 entirely on this PC with the Windows English recognizer — no audio leaves the
-machine and no cloud request is made while it waits. Say "Jarvis", wait for the
-beep, then speak your command; Jarvis transcribes it locally, sends only the text
+machine and no cloud request is made while it waits. Say "Victor", wait for the
+beep, then speak your command; Victor transcribes it locally, sends only the text
 to your model, and reads the answer aloud without opening the window. The
 hands-free recording window is 7 seconds (`WAKE_SECONDS` in `app.py`).
 
@@ -99,14 +101,14 @@ reply. **Stop** or **Esc** cuts it off.
 ## Window sizes
 
 Drag the window narrower than about 720 px and the sidebar folds into the **☰**
-menu; text stays the same size. **⤡** shrinks Jarvis to a small always-on-top
+menu; text stays the same size. **⤡** shrinks Victor to a small always-on-top
 floating window; **⤢** puts it back. Hover any icon button to see its name.
 Right-click a message, or click **คัดลอก**, to copy it.
 
 ## When Gemini is busy
 
 HTTP 500/502/503/504 mean Google's servers are overloaded, not that your key is
-wrong. Jarvis retries up to 3 times (after 2, 4 and 8 seconds, or the wait Google
+wrong. Victor retries up to 3 times (after 2, 4 and 8 seconds, or the wait Google
 asks for, at most 10 seconds) and shows "Gemini ไม่ว่าง กำลังลองใหม่" in the chat.
 Press **■** or **Esc** to stop waiting. Quota errors (HTTP 429) are not retried,
 because retrying uses more quota. If it keeps happening, try again later or pick
@@ -128,14 +130,14 @@ while Mentor mode is on.
 
 ## Mentor mode (POSN)
 
-Toggle **Mentor mode (POSN)** in the sidebar to turn Jarvis into a coach for
+Toggle **Mentor mode (POSN)** in the sidebar to turn Victor into a coach for
 your POSN Camp 2 problems instead of a general assistant. It proposes no PC
 actions — the schema it answers in has no `actions` key — and every turn is
 typed; the voice and screen-control features above are unrelated to it.
 Mentor mode needs a Claude model (`sonnet`, `haiku` or `opus`); with a Gemini
 model selected, every mentor turn errors instead of replying.
 
-Coaching moves through six rungs, one at a time. Jarvis can never hand out
+Coaching moves through six rungs, one at a time. Victor can never hand out
 more than one rung above where the current problem already stands, and two
 rungs are gated further:
 
@@ -163,7 +165,7 @@ problem already given up on stays given-up even if a later reply proposes
 "working" again. Replies about a problem are prefixed `[ขั้น n/5: …]`;
 a general turn that names no problem carries no prefix. If the model writes a
 reply for a rung higher than the one it was actually granted — most often
-right after switching to a new problem — Jarvis withholds that text entirely:
+right after switching to a new problem — Victor withholds that text entirely:
 the label still shows the true rung, but the body is replaced with a short
 Thai nudge to say more about the problem, and nothing over-rung is ever
 stored in history either.
@@ -175,9 +177,9 @@ trigger it. เปิดเฉลย also marks the current problem given-up —
 that you didn't reach the answer on your own — and that can't be undone by
 continuing to chat about the same problem.
 
-Jarvis's study wiki lives at `D:\Jarvis\Study`, reusing the page schema from
+Victor's study wiki lives at `D:\Jarvis\Study`, reusing the page schema from
 your existing `D:\Jarvis\Luk Nong Pong` vault. When a reply proposes a note,
-Jarvis asks **"Save to wiki?"** before writing anything, and warns **"This
+Victor asks **"Save to wiki?"** before writing anything, and warns **"This
 page already exists and will be replaced."** first if a page with that slug
 is already there. Reading the vault skips any page it can't decode as UTF-8
 rather than failing the whole read, and notices a page you edited in place in
@@ -200,9 +202,9 @@ POSN, CTF`. Change nothing else — the schema is reused verbatim. Without this
 step mentor mode still works, it just has no wiki context and cannot save
 notes.
 
-One page needs writing by hand: `style-guide`. The original plan for Jarvis
+One page needs writing by hand: `style-guide`. The original plan for Victor
 to interview you for it on first use was not built in this version; without
-the page, Jarvis coaches without adapting to your writing style until you add
+the page, Victor coaches without adapting to your writing style until you add
 it yourself.
 
 Mentor turns run synchronously on the UI thread: the window freezes for the
@@ -218,10 +220,10 @@ kept.
 
 ## Screen control (mouse and keyboard)
 
-Ask in chat, e.g. “เปิด Spotify แล้วกดเล่นเพลง”. Jarvis proposes `control_screen`;
+Ask in chat, e.g. “เปิด Spotify แล้วกดเล่นเพลง”. Victor proposes `control_screen`;
 approve it to start. Then, per step:
 
-1. Jarvis hides itself and screenshots the **primary monitor**.
+1. Victor hides itself and screenshots the **primary monitor**.
 2. The screenshot and your goal go to Gemini, which returns one step:
    click, double click, right click, type one line, scroll, or one allowed key.
 3. A dialog shows the step and a red marker on the screenshot.
@@ -229,7 +231,7 @@ approve it to start. Then, per step:
 
 Limits: 25 steps per task, primary monitor only, no Windows key or Win+R,
 typed text cannot contain Enter. Text on screen is treated as untrusted.
-Jarvis is told never to type passwords or confirm payments/deletions, but
+Victor is told never to type passwords or confirm payments/deletions, but
 that is an AI instruction, not a guarantee — read each step before approving.
 **Every screenshot is sent to Google.** Close private windows first.
 
@@ -243,10 +245,10 @@ Sidebar → **Discord และกฎการส่ง**. One line per person/c
 Saved in `data/discord.json`. Then ask in chat: “ส่ง Discord หา ชื่อ ว่า ...”.
 
 Rules enforced in code: listed names only, 10 messages per hour, one line up to
-1,000 characters, no `@everyone`/`@here`, Jarvis opens the chat and checks
+1,000 characters, no `@everyone`/`@here`, Victor opens the chat and checks
 Discord is the front window before typing and again before Enter. With
 **ส่งทันที** ticked, listed names send without a dialog; unticked, each message
-needs approval. Every send appears in the Jarvis chat.
+needs approval. Every send appears in the Victor chat.
 
 ## Access and data handling
 
@@ -275,8 +277,8 @@ needs approval. Every send appears in the Jarvis chat.
   targets. It does not inspect website content, verify DNS destinations or sandbox
   the external browser. Only approve websites you want to visit. Search terms go
   to Google when the browser opens the approved search.
-- Opening a search does **not** give Jarvis its results. Outside approved screen
-  steps and Discord rules, Jarvis cannot operate apps, send messages, delete/move
+- Opening a search does **not** give Victor its results. Outside approved screen
+  steps and Discord rules, Victor cannot operate apps, send messages, delete/move
   files or install software.
 - Stop prevents late results from reaching the conversation or becoming actions.
   It cannot recall a cloud request already sent or undo an approved PC action.
@@ -317,5 +319,5 @@ Test those yourself from the desktop session.
 
 ## Remove
 
-Close Jarvis and delete this folder when you no longer need it. Keep any notes you
+Close Victor and delete this folder when you no longer need it. Keep any notes you
 want to retain. No service, startup task or system-wide package was installed.

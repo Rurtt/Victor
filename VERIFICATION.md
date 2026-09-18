@@ -1,5 +1,7 @@
 # Verification — 2026-09-18
 
+(App is Victor, formerly Jarvis — renamed only; no behavior changed.)
+
 ## Passed
 
 - 168 automated tests (`python -m unittest discover -s tests`) across the policy
@@ -16,7 +18,7 @@
   given-up even when a later reply proposes "working" again. Whenever the
   model's proposed rung exceeds what it was actually granted — including a
   turn with no problem attached, where the pre-call ceiling stands in for the
-  granted rung — Jarvis withholds that reply's text outright: only the true
+  granted rung — Victor withholds that reply's text outright: only the true
   rung label (when there is one) and a fixed Thai nudge are shown or stored,
   never the over-rung text itself. เปิดเฉลย only overrides when it is the
   entire message, not a substring, so a negation like "อย่าเปิดเฉลยนะ" does not
@@ -65,7 +67,7 @@
   window freezes for the length of the call and Stop cannot cancel it, unlike
   the worker-thread chat path. Moving it onto that same machinery is the next
   change, and should happen before this is used under time pressure.
-- The style-guide interview from spec §5.6 (Jarvis drafting the `style-guide`
+- The style-guide interview from spec §5.6 (Victor drafting the `style-guide`
   page from a first-session interview) was not built. Write that page in
   Obsidian by hand; without it mentor mode still works, just without an
   adapted voice.

@@ -1,4 +1,4 @@
-"""Jarvis visual tokens: Insta Sunset dark theme with solid colors. Only file with color values."""
+"""Victor visual tokens: Insta Sunset dark theme with solid colors. Only file with color values."""
 
 BG = "#0C0A12"
 SIDEBAR = "#14101D"

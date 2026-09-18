@@ -1,4 +1,4 @@
-"""Mentor-mode policy: how far Jarvis is allowed to help, and how it says so.
+"""Mentor-mode policy: how far Victor is allowed to help, and how it says so.
 
 The ladder is enforced here in Python, never in the prompt. The model proposes a
 rung; this module decides what it actually gets. That is the same posture

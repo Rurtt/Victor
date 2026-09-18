@@ -10,7 +10,7 @@ import time
 import wave
 import winsound
 
-ALIAS = "jarvis_rec"
+ALIAS = "victor_rec"
 
 
 def _mci(command: str) -> str:
@@ -42,7 +42,7 @@ class Recorder:
     def stop(self) -> bytes:
         if not self.active:
             return b""
-        fd, path = tempfile.mkstemp(prefix="jarvis-", suffix=".wav")
+        fd, path = tempfile.mkstemp(prefix="victor-", suffix=".wav")
         os.close(fd)
         try:
             _mci(f"stop {ALIAS}")
@@ -77,7 +77,7 @@ def play(wav: bytes, cancelled=lambda: False):
     Synchronous in-memory PlaySound cannot be interrupted, so play a temp file async."""
     with wave.open(io.BytesIO(wav)) as w:
         seconds = w.getnframes() / w.getframerate()
-    fd, path = tempfile.mkstemp(prefix="jarvis-", suffix=".wav")
+    fd, path = tempfile.mkstemp(prefix="victor-", suffix=".wav")
     os.close(fd)
     try:
         Path(path).write_bytes(wav)
@@ -92,7 +92,7 @@ def play(wav: bytes, cancelled=lambda: False):
 
 
 def beep():
-    """Short acknowledgement that Jarvis heard its name."""
+    """Short acknowledgement that Victor heard its name."""
     winsound.MessageBeep(winsound.MB_OK)
 
 
