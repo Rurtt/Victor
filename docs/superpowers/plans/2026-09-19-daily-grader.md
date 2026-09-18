@@ -1453,7 +1453,8 @@ def _pick(entries, level, served, weak, rng, exclude):
 
 def _pick_near(entries, level, served, weak, rng, exclude=()):
     """The wanted level if it has problems left, else the nearest level that does."""
-    for candidate in sorted(range(1, MAX_LEVEL + 1), key=lambda n: (abs(n - level), n)):
+    # Ties go to the harder level: a Camp-2 student should not fall back into Camp 1.
+    for candidate in sorted(range(1, MAX_LEVEL + 1), key=lambda n: (abs(n - level), -n)):
         found = _pick(entries, candidate, served, weak, rng, exclude)
         if found:
             return found
@@ -1554,8 +1555,9 @@ class DailyCardTests(unittest.TestCase):
         self.assertTrue((self.app.daily_root / date.today().isoformat() / "main" / "sol.cpp").exists())
 
     def test_today_card_lists_both_problems(self):
+        import customtkinter as ctk
         texts = " ".join(w.cget("text") for w in self.app.today_card.winfo_children()
-                         if "text" in w.keys())
+                         if isinstance(w, ctk.CTkLabel))
         self.assertIn("main", texts)
         self.assertIn("warmup", texts)
 
