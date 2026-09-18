@@ -50,17 +50,17 @@ class Vault:
         self._stamp = None
 
     def catalogue(self) -> list[dict]:
-        """Frontmatter only, cached against the directory's mtime."""
+        """Frontmatter only, cached against each page's mtime."""
         if not self.wiki.is_dir():
             raise VaultError(f"ไม่พบ wiki ที่ {self.wiki}")
-        stamp = self.wiki.stat().st_mtime_ns
+        stamp = tuple((p.name, p.stat().st_mtime_ns) for p in sorted(self.wiki.glob("*.md")))
         if self._cache is not None and stamp == self._stamp:
             return self._cache
         entries = []
         for path in sorted(self.wiki.glob("*.md")):
             try:
                 head = path.read_text(encoding="utf-8")[:4000]
-            except OSError:
+            except (OSError, UnicodeDecodeError):
                 continue
             fields = _frontmatter(head)
             if fields:
@@ -71,7 +71,7 @@ class Vault:
     def page(self, slug: str) -> str:
         for entry in self.catalogue():
             if entry["slug"] == slug:
-                return entry["path"].read_text(encoding="utf-8")[:MAX_PAGE]
+                return entry["path"].read_text(encoding="utf-8", errors="replace")[:MAX_PAGE]
         return ""
 
     def select(self, topic: str, tags, limit: int = 2, budget: int = 1500) -> list[str]:
@@ -84,7 +84,7 @@ class Vault:
         chosen, spent = [], 0
         share = budget // max(1, min(limit, len(ranked) or 1))
         for entry in ranked[:limit]:
-            text = entry["path"].read_text(encoding="utf-8")[:share]
+            text = entry["path"].read_text(encoding="utf-8", errors="replace")[:share]
             if spent + len(text) > budget:
                 text = text[:budget - spent]
             if not text:

@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import tempfile
 import unittest
 
@@ -51,6 +52,33 @@ class CatalogueTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             with self.assertRaises(VaultError):
                 Vault(Path(d) / "not-here").catalogue()
+
+    def test_invalid_utf8_pages_are_skipped_not_fatal(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            build(root, [("good", "concept", ["dp"], "ok")])
+            (root / "wiki" / "broken-encoding.md").write_bytes(b"\xff\xfe---")
+            entries = [e["slug"] for e in Vault(root).catalogue()]
+            self.assertEqual(entries, ["good"])
+
+    def test_in_place_edits_are_noticed_by_same_vault_instance(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            build(root, [("page", "concept", ["dp"], "body")])
+            vault = Vault(root)
+            self.assertEqual([e["slug"] for e in vault.catalogue()], ["page"])
+            self.assertEqual(vault.catalogue()[0]["tags"], ["dp"])
+            # Edit the page in place with new tags
+            page_path = root / "wiki" / "page.md"
+            (page_path).write_text(
+                PAGE.format(slug="page", type="concept", tags="graph, dp", body="body"),
+                encoding="utf-8")
+            # Force mtime change to trigger cache invalidation
+            t = page_path.stat().st_mtime_ns
+            os.utime(page_path, ns=(t + 10**9, t + 10**9))
+            # Second call should see new tags
+            entries = vault.catalogue()
+            self.assertEqual(entries[0]["tags"], ["graph", "dp"])
 
 
 class SelectionTests(unittest.TestCase):
