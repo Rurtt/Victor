@@ -558,7 +558,13 @@ class VictorApp(ctk.CTk):
         self.submit(text)
 
     def mentor_turn(self, prompt: str):
-        """One coaching turn: gather in Python, ask once, clamp, then store."""
+        """One coaching turn: gather in Python, ask once, clamp, then store.
+
+        Everything touching Tk, SQLite or the vault runs here on the Tk thread;
+        only the model call runs in a worker, and poll() hands its reply to
+        finish_mentor_turn. Returns the worker thread (None if nothing was sent).
+        """
+        generation = self.generation
         # Remembered before any read below can fail: the model needs to see this
         # turn, and the user's own message is never lost to a DB or vault error.
         self.remember("user", prompt)
@@ -572,8 +578,8 @@ class VictorApp(ctk.CTk):
             style_guide = self.study.style_guide() if self.study else ""
             pages = self.study.select(topic, tags) if (self.study and topic) else []
         except (MemoryError, sqlite3.Error, VaultError, OSError) as exc:
-            self.add_message("ERROR", str(exc))
-            return
+            self.events.put(("error", generation, str(exc)))  # poll() restores busy/status
+            return None
 
         override = mentor.is_override(prompt)
         stored = (problem or {}).get("rung", 0)
@@ -591,12 +597,22 @@ class VictorApp(ctk.CTk):
             similar=similar, style_guide=style_guide, pages=pages,
             turns=self.history[-8:])
 
-        try:
-            reply = ask_mentor(self.model, text)
-        except (BrainError, mentor.MentorError) as exc:
-            self.add_message("ERROR", str(exc))
-            return
+        context, model = (problem, override, verdict, ceiling), self.model
+        def work():
+            try:
+                reply = ask_mentor(model, text, cancelled=lambda: generation != self.generation)
+                self.events.put(("mentor", generation, (prompt, context, reply)))
+            except Exception as exc:
+                message = (str(exc) if isinstance(exc, (BrainError, mentor.MentorError))
+                           else "An unexpected request error occurred. Nothing was executed.")
+                self.events.put(("error", generation, message))
+        thread = threading.Thread(target=work, daemon=True)
+        thread.start()
+        return thread
 
+    def finish_mentor_turn(self, prompt, context, reply):
+        """The post-call half of mentor_turn, on the Tk thread: record, withhold, show."""
+        problem, override, verdict, ceiling = context
         target_id, granted = self.record_mentor_reply(prompt, problem, reply, override, verdict)
         # With no problem to attribute the reply to (no current problem, model
         # named none, or a DB error left target_id unset), fall back to the
@@ -706,12 +722,8 @@ class VictorApp(ctk.CTk):
         self.set_status(self.thinking_status(), "thinking")
         self.add_message("YOU", display or prompt)
         if self.mentor_mode and not summary:
-            self.busy = False
-            self.send_button.configure(state="normal")
             self.hands_free = False
-            self.mentor_turn(prompt)
-            self.set_status("Ready • Microphone off")
-            return
+            return self.mentor_turn(prompt)  # the worker thread, for tests
         history, key, model = list(self.history), self.key, self.model
         targets = list(self.discord["targets"])
         def work():
@@ -784,6 +796,9 @@ class VictorApp(ctk.CTk):
                     continue
                 if kind == "screen":
                     self.screen_review(*value)
+                    continue
+                if kind == "mentor":
+                    self.finish_mentor_turn(*value)
                     continue
                 reply, prompt, summary = value
                 self.last_reply = reply.text

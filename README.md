@@ -207,10 +207,11 @@ to interview you for it on first use was not built in this version; without
 the page, Victor coaches without adapting to your writing style until you add
 it yourself.
 
-Mentor turns run synchronously on the UI thread: the window freezes for the
-length of the call and **Stop** does not cancel it, unlike the ordinary chat
-path. That's the next thing to fix — don't rely on mentor mode under a clock
-yet.
+Mentor turns run the Claude call in a background thread, like ordinary chat:
+the window stays responsive and **Stop** drops the reply without recording a
+rung (your own message stays in history). Stop also terminates the `claude -p`
+process within about a tenth of a second; any usage already spent on that call
+is not refunded.
 
 All conversation history, mentor and ordinary chat alike, now lives in
 `data/jarvis.db` and survives a restart; starting a new conversation is not
