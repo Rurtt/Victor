@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import app
-from app import MAX_ROWS, JarvisApp
+from app import MAX_ROWS, VictorApp
 from brain import Reply
 from local_store import LocalStore
 from thai import tr
@@ -16,7 +16,7 @@ from thai import tr
 class DesktopFlowTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.app = JarvisApp(store=LocalStore(Path(self.temp.name)))
+        self.app = VictorApp(store=LocalStore(Path(self.temp.name)))
         self.app.withdraw()
 
     def tearDown(self):
@@ -103,12 +103,12 @@ class DesktopFlowTests(unittest.TestCase):
 
     def test_compact_mode_keeps_chat_and_restores_sidebar(self):
         a = self.app
-        a.input.insert("1.0", "สวัสดี Jarvis")
+        a.input.insert("1.0", "สวัสดี Victor")
         a.toggle_compact()
         self.assertTrue(a.compact)
         self.assertEqual(a.sidebar.winfo_manager(), "")
         self.assertTrue(a.attributes("-topmost"))
-        self.assertEqual(a.input.get("1.0", "end-1c"), "สวัสดี Jarvis")
+        self.assertEqual(a.input.get("1.0", "end-1c"), "สวัสดี Victor")
         a.toggle_compact()
         self.assertFalse(a.compact)
         self.assertEqual(a.sidebar.winfo_manager(), "pack")
@@ -175,7 +175,7 @@ class BackgroundModeTests(unittest.TestCase):
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.app = JarvisApp(store=LocalStore(Path(self.temp.name)))
+        self.app = VictorApp(store=LocalStore(Path(self.temp.name)))
         self.app.withdraw()
 
     def tearDown(self):
@@ -259,7 +259,7 @@ class PersistentHistoryTests(unittest.TestCase):
         self.temp.cleanup()
 
     def start(self):
-        started = JarvisApp(store=LocalStore(Path(self.temp.name)))
+        started = VictorApp(store=LocalStore(Path(self.temp.name)))
         started.withdraw()
         return started
 
@@ -297,7 +297,7 @@ class PersistentHistoryTests(unittest.TestCase):
 class MentorModeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.app = JarvisApp(store=LocalStore(Path(self.temp.name)))
+        self.app = VictorApp(store=LocalStore(Path(self.temp.name)))
         self.app.withdraw()
         self.app.study = None  # never touch the real D:\Jarvis\Study vault in tests
 
@@ -419,7 +419,7 @@ class MentorModeTests(unittest.TestCase):
         a.mentor_mode = True
         a.store.save_settings(a.model, mentor=True)
         a.close()
-        self.app = JarvisApp(store=LocalStore(Path(self.temp.name)))
+        self.app = VictorApp(store=LocalStore(Path(self.temp.name)))
         self.app.withdraw()
         self.assertTrue(self.app.mentor_mode)
 

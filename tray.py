@@ -13,9 +13,9 @@ import threading
 import time
 
 _LOG = logging.getLogger(__name__)
-_CLASS = "JarvisDesktopTrayWindow.v1"
-_MUTEX = "Local\\JarvisDesktop.Instance.v1"
-_OPEN_MESSAGE = "JarvisDesktop.ShowWindow.v1"
+_CLASS = "VictorDesktopTrayWindow.v1"
+_MUTEX = "Local\\VictorDesktop.Instance.v1"
+_OPEN_MESSAGE = "VictorDesktop.ShowWindow.v1"
 _WM_TRAY, _WM_STOP, _WM_WAKE = 0x8001, 0x8002, 0x8003
 _WNDPROC = getattr(C, "WINFUNCTYPE", C.CFUNCTYPE)(C.c_ssize_t, W.HWND, W.UINT, C.c_size_t, C.c_ssize_t)
 
@@ -43,7 +43,7 @@ class _WindowsAPI:
     """Declare every ABI explicitly; defaults truncate handles on 64-bit Windows."""
     def __init__(self):
         if os.name != "nt":
-            raise RuntimeError("The Jarvis tray requires Windows.")
+            raise RuntimeError("The Victor tray requires Windows.")
         self.user = C.WinDLL("user32", use_last_error=True)
         self.shell = C.WinDLL("shell32", use_last_error=True)
         self.kernel = C.WinDLL("kernel32", use_last_error=True)
@@ -105,7 +105,7 @@ def acquire_instance() -> bool:
         handle = api.kernel.CreateMutexW(None, False, _MUTEX)
         error = C.get_last_error()  # Capture immediately, before any other Win32 call.
         if not handle:
-            raise _failure("Creating the Jarvis instance guard")
+            raise _failure("Creating the Victor instance guard")
         if error == 183:  # ERROR_ALREADY_EXISTS
             api.kernel.CloseHandle(handle)
             message = api.user.RegisterWindowMessageW(_OPEN_MESSAGE)
@@ -161,18 +161,18 @@ class Tray:
             if self._thread and self._thread.is_alive():
                 if self.running:
                     return True
-                raise RuntimeError("The Jarvis tray thread is still starting or stopping.")
+                raise RuntimeError("The Victor tray thread is still starting or stopping.")
             self._ready.clear()
             self._stopping.clear()
             self._error = None
-            self._thread = threading.Thread(target=self._run, name="JarvisTray", daemon=True)
+            self._thread = threading.Thread(target=self._run, name="VictorTray", daemon=True)
             self._thread.start()
             if not self._ready.wait(3.0):
                 self.stop(timeout=0.5)
-                raise RuntimeError("The Jarvis tray did not start within 3 seconds.")
+                raise RuntimeError("The Victor tray did not start within 3 seconds.")
             if self._error:
                 self.stop(timeout=0.5)
-                raise RuntimeError(f"Could not create the Jarvis tray: {self._error}") from self._error
+                raise RuntimeError(f"Could not create the Victor tray: {self._error}") from self._error
             return self.running
 
     def stop(self, timeout=2.0) -> None:
@@ -195,14 +195,14 @@ class Tray:
         info.hWnd, info.uID = self._hwnd, 1
         info.uFlags = 1 | 2 | 4  # NIF_MESSAGE | NIF_ICON | NIF_TIP
         info.uCallbackMessage, info.hIcon = _WM_TRAY, self._icon
-        info.szTip = "Jarvis - wake " + ("on" if self._wake else "off")
+        info.szTip = "Victor - wake " + ("on" if self._wake else "off")
         return bool(self._api.shell.Shell_NotifyIconW(operation, C.byref(info)))
 
     def _emit(self, event):
         try:
             self.callback(event)
         except Exception:
-            _LOG.exception("Jarvis tray callback failed: %s", event)
+            _LOG.exception("Victor tray callback failed: %s", event)
 
     def _menu(self):
         user = self._api.user
@@ -241,7 +241,7 @@ class Tray:
             if self._taskbar_message and message == self._taskbar_message:
                 self._installed = self._notify(0)  # NIM_ADD after Explorer restart.
                 if not self._installed:
-                    _LOG.error("Could not restore Jarvis tray after Explorer restart")
+                    _LOG.error("Could not restore Victor tray after Explorer restart")
                     self._emit("open")  # Keep the app reachable if recreation fails.
                 return 0
             if message == _WM_WAKE:
@@ -255,7 +255,7 @@ class Tray:
                 self._api.user.PostQuitMessage(0)
                 return 0
         except Exception:
-            _LOG.exception("Jarvis tray window event failed")
+            _LOG.exception("Victor tray window event failed")
             return 0
         return self._api.user.DefWindowProcW(hwnd, message, wparam, lparam)
 
@@ -279,7 +279,7 @@ class Tray:
             if not atom:
                 raise _failure("Registering tray window")
             # A hidden top-level window receives TaskbarCreated; HWND_MESSAGE does not.
-            self._hwnd = user.CreateWindowExW(0, _CLASS, "Jarvis", 0, 0, 0, 0, 0,
+            self._hwnd = user.CreateWindowExW(0, _CLASS, "Victor", 0, 0, 0, 0, 0,
                                             None, None, module, None)
             if not self._hwnd:
                 raise _failure("Creating tray window")
@@ -308,7 +308,7 @@ class Tray:
         except Exception as exc:
             self._error = exc
             if self._ready.is_set():
-                _LOG.exception("Jarvis tray stopped unexpectedly")
+                _LOG.exception("Victor tray stopped unexpectedly")
                 self._emit("open")
         finally:
             if self._api:

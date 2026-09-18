@@ -8,7 +8,7 @@ class StorageTests(unittest.TestCase):
     def test_key_round_trip_is_encrypted_and_settings_are_separate(self):
         with tempfile.TemporaryDirectory() as d:
             store = LocalStore(Path(d))
-            secret = "test-jarvis-key-not-a-real-credential"
+            secret = "test-victor-key-not-a-real-credential"
             store.save_key(secret)
             self.assertNotIn(secret.encode(), store.key_path.read_bytes())
             self.assertEqual(store.read_key(), secret)

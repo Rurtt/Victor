@@ -1,4 +1,4 @@
-"""Jarvis desktop: explicit input, cloud chat and human-approved PC actions."""
+"""Victor desktop: explicit input, cloud chat and human-approved PC actions."""
 from __future__ import annotations
 
 import os
@@ -78,15 +78,15 @@ class Tooltip:
             self.tip = None
 
 
-class JarvisApp(ctk.CTk):
+class VictorApp(ctk.CTk):
     def __init__(self, store=None):
         ctk.set_appearance_mode("dark")
         super().__init__(fg_color=T.BG)
-        self.title(tr("Jarvis • Personal assistant"))
+        self.title(tr("Victor • Personal assistant"))
         self.geometry("1100x780")
         self.minsize(360, 440)
         try:
-            self.iconbitmap(default=str(BASE / "jarvis.ico"))  # default= also covers dialogs
+            self.iconbitmap(default=str(BASE / "victor.ico"))  # default= also covers dialogs
         except tk.TclError:
             pass
         self.store = store or LocalStore(BASE)
@@ -138,7 +138,7 @@ class JarvisApp(ctk.CTk):
         self.bind("<Escape>", lambda e: self.stop())
         self.bind("<Configure>", self.on_configure)
         self._poll_id = self.after(100, self.poll)
-        self.add_message("JARVIS", "สวัสดี วันนี้อยากให้ช่วยอะไร?\n\nพิมพ์คุย วางข้อความให้สรุป หรือบอกงานที่อยากให้ช่วยได้เลย")
+        self.add_message("VICTOR", "สวัสดี วันนี้อยากให้ช่วยอะไร?\n\nพิมพ์คุย วางข้อความให้สรุป หรือบอกงานที่อยากให้ช่วยได้เลย")
         if self.storage_notice:
             self.add_message("ERROR", self.storage_notice)
         self.set_connection(self.connection_text(), self.connected())
@@ -149,7 +149,7 @@ class JarvisApp(ctk.CTk):
 
     def logo(self, size):
         try:
-            return ctk.CTkImage(Image.open(BASE / "jarvis.ico").convert("RGBA"), size=(size, size))
+            return ctk.CTkImage(Image.open(BASE / "victor.ico").convert("RGBA"), size=(size, size))
         except OSError:
             return None
 
@@ -202,7 +202,7 @@ class JarvisApp(ctk.CTk):
         self.sidebar = ctk.CTkFrame(self, fg_color=T.SIDEBAR, corner_radius=0, width=220)
         self.sidebar.pack(side="left", fill="y")
         self.sidebar.pack_propagate(False)
-        ctk.CTkLabel(self.sidebar, text=" Jarvis", image=self.logo_image, compound="left",
+        ctk.CTkLabel(self.sidebar, text=" Victor", image=self.logo_image, compound="left",
                      font=T.font(T.TITLE, True), text_color=T.TEXT).pack(anchor="w", padx=16, pady=(20, 0))
         self.label(self.sidebar, "YOUR PERSONAL ASSISTANT", T.HINT, T.MUTED).pack(anchor="w", padx=18, pady=(2, 18))
         self.button(self.sidebar, "+  New conversation", self.new_chat, primary=True).pack(fill="x", padx=14, pady=(0, 10))
@@ -299,7 +299,7 @@ class JarvisApp(ctk.CTk):
                 self.voice_row.pack_forget()
                 self.menu_button.pack(side="left", padx=(0, 8), before=self.heading)
                 self.header_logo.pack(side="left", padx=(0, 4), before=self.heading)
-                self.heading.configure(text="Jarvis", font=T.font(20, True))
+                self.heading.configure(text="Victor", font=T.font(20, True))
                 self.main_panel.pack_configure(padx=12, pady=12)
             else:
                 self.menu_button.pack_forget()
@@ -418,10 +418,10 @@ class JarvisApp(ctk.CTk):
                                   fg_color=T.PRIMARY, corner_radius=T.RADIUS_BUBBLE,
                                   wraplength=wrap, justify="left", anchor="w")
             bubble.pack(side="right", padx=(40, 6), ipadx=8, ipady=6)
-        elif who == "JARVIS":
+        elif who == "VICTOR":
             box = ctk.CTkFrame(row, fg_color=T.SURFACE, corner_radius=T.RADIUS_BUBBLE)
             box.pack(side="left", padx=(6, 40))
-            self.label(box, "Jarvis", T.LABEL, T.ORANGE, bold=True).pack(anchor="w", padx=14, pady=(8, 0))
+            self.label(box, "Victor", T.LABEL, T.ORANGE, bold=True).pack(anchor="w", padx=14, pady=(8, 0))
             bubble = ctk.CTkLabel(box, text=text, font=T.font(T.BODY), text_color=T.TEXT,
                                   wraplength=wrap, justify="left", anchor="w")
             bubble.pack(anchor="w", padx=14)
@@ -460,7 +460,7 @@ class JarvisApp(ctk.CTk):
         win.transient(self)
         def icon():  # CTkToplevel resets its icon ~200 ms after creation
             try:
-                win.iconbitmap(str(BASE / "jarvis.ico"))
+                win.iconbitmap(str(BASE / "victor.ico"))
             except tk.TclError:
                 pass
         self.after(250, icon)
@@ -494,7 +494,7 @@ class JarvisApp(ctk.CTk):
             messagebox.showerror("ติดตั้งเสียงในเครื่องไม่ได้", str(exc), parent=self)
 
     def settings(self):
-        win = self.dialog("Jarvis — AI settings", 740, 700)
+        win = self.dialog("Victor — AI settings", 740, 700)
         self.label(win, "Connect your AI", T.HEADING, bold=True).pack(anchor="w", padx=24, pady=(22, 10))
         self.label(win, "Model ID", T.LABEL).pack(anchor="w", padx=24)
         model = self.field(win)
@@ -608,13 +608,13 @@ class JarvisApp(ctk.CTk):
             shown = f"{mentor.label(granted)} {mentor.WITHHELD}" if target_id else mentor.WITHHELD
             self.remember("model", shown)
             self.history = self.history[-16:]
-            self.add_message("JARVIS", shown)
+            self.add_message("VICTOR", shown)
             self.last_reply = shown
             return
         shown = f"{mentor.label(granted)} {reply.text}" if target_id else reply.text
         self.remember("model", shown)
         self.history = self.history[-16:]
-        self.add_message("JARVIS", shown)
+        self.add_message("VICTOR", shown)
         self.last_reply = shown
         if reply.note and self.study:
             self.offer_note(reply.note)
@@ -787,7 +787,7 @@ class JarvisApp(ctk.CTk):
                     continue
                 reply, prompt, summary = value
                 self.last_reply = reply.text
-                self.add_message("JARVIS", reply.text or "Please review the proposed action below.")
+                self.add_message("VICTOR", reply.text or "Please review the proposed action below.")
                 # Raw summary documents are not retained in later conversation.
                 self.remember("user", "Summarize the document I supplied." if summary else prompt)
                 self.remember("model", reply.text)
@@ -846,7 +846,7 @@ class JarvisApp(ctk.CTk):
             if ticket not in self.gate.pending:
                 continue
             # Exact validated content is displayed as plain text, including the entire note.
-            win = self.dialog("Jarvis — approve one PC action", 760, 520)
+            win = self.dialog("Victor — approve one PC action", 760, 520)
             self.label(win, "Review before running", T.HEADING, bold=True).pack(anchor="w", padx=20, pady=(20, 8))
             self.label(win, "Only this action will run. Cancel leaves your PC unchanged.", T.LABEL, T.MUTED).pack(anchor="w", padx=20)
             win.preview = self.textbox(win)
@@ -879,7 +879,7 @@ class JarvisApp(ctk.CTk):
         self.set_status("Ready • Microphone off")
 
     def actions_window(self):
-        win = self.dialog("Jarvis — PC actions", 620, 520)
+        win = self.dialog("Victor — PC actions", 620, 520)
         self.label(win, "Useful things, one click away", T.HEADING, bold=True).pack(anchor="w", padx=22, pady=20)
         self.label(win, "These work without an API key. Each opens an approval preview.", T.LABEL, T.MUTED).pack(anchor="w", padx=22)
         entries = [("Open Calculator", {"name": "open_app", "arguments": {"app": "calculator"}}),
@@ -894,11 +894,11 @@ class JarvisApp(ctk.CTk):
                 self.update_pending()
                 self.review_actions()
             self.button(win, title, choose).pack(fill="x", padx=22, pady=6)
-        self.label(win, "In chat, you can also ask to open an HTTPS website, search the web,\nadjust media volume or save a new note. Web search opens your\nbrowser; Jarvis does not read those search results.",
+        self.label(win, "In chat, you can also ask to open an HTTPS website, search the web,\nadjust media volume or save a new note. Web search opens your\nbrowser; Victor does not read those search results.",
                    T.LABEL, T.MUTED, justify="left").pack(anchor="w", padx=22, pady=15)
 
     def summary_window(self):
-        win = self.dialog("Jarvis — summarize", 840, 620)
+        win = self.dialog("Victor — summarize", 840, 620)
         self.label(win, "Make the long version useful", T.HEADING, bold=True).pack(anchor="w", padx=20, pady=(20, 8))
         self.label(win, "Paste text or choose a UTF-8 text file. Review what will be sent to Gemini.", T.LABEL, T.MUTED).pack(anchor="w", padx=20)
         text = self.textbox(win, undo=True)
@@ -950,7 +950,7 @@ class JarvisApp(ctk.CTk):
             self.screen_goal = None
             self.add_message("STATUS", f"ครบ {MAX_SCREEN_STEPS} ขั้นแล้ว หยุดควบคุมหน้าจอ สั่งใหม่เพื่อทำต่อ")
             return
-        # Hide Jarvis so the screenshot shows the apps, not this window.
+        # Hide Victor so the screenshot shows the apps, not this window.
         self.withdraw()
         self.update()
         self.after(400, self._screen_capture_hidden)
@@ -968,7 +968,7 @@ class JarvisApp(ctk.CTk):
         generation = self.generation
         self.busy = True
         self.send_button.configure(state="disabled")
-        self.set_status("Jarvis กำลังดูหน้าจอ… • กด Esc เพื่อหยุด", "thinking")
+        self.set_status("Victor กำลังดูหน้าจอ… • กด Esc เพื่อหยุด", "thinking")
         goal, steps, key, model, png = self.screen_goal, list(self.screen_steps), self.key, self.model, screen.to_png(image)
         def work():
             try:
@@ -984,9 +984,9 @@ class JarvisApp(ctk.CTk):
     def screen_review(self, reply, step, image):
         if step["kind"] == "done":
             self.screen_goal = None
-            self.add_message("JARVIS", reply or "เสร็จแล้ว")
+            self.add_message("VICTOR", reply or "เสร็จแล้ว")
             return
-        win = self.dialog(f"Jarvis — ขั้นที่ {len(self.screen_steps) + 1}", 800, 740)
+        win = self.dialog(f"Victor — ขั้นที่ {len(self.screen_steps) + 1}", 800, 740)
         win.attributes("-topmost", True)
         self.label(win, screen.describe_step(step), T.HEADING, bold=True, wraplength=740, justify="left").pack(anchor="w", padx=20, pady=(16, 2))
         if reply:
@@ -1027,7 +1027,7 @@ class JarvisApp(ctk.CTk):
         self.after(900, self.screen_capture)  # let the app react before the next screenshot
 
     def discord_window(self):
-        win = self.dialog("Jarvis — Discord", 760, 700)
+        win = self.dialog("Victor — Discord", 760, 700)
         self.label(win, "ส่ง Discord จากบัญชีของคุณ", T.HEADING, bold=True).pack(anchor="w", padx=22, pady=(20, 6))
         self.label(win, "คำเตือน: Discord ห้ามใช้โปรแกรมควบคุมบัญชีผู้ใช้ทั่วไป บัญชีอาจถูกระงับได้ ใช้ด้วยความเสี่ยงของคุณเอง",
                    T.LABEL, T.WARN, wraplength=700, justify="left").pack(anchor="w", padx=22)
@@ -1038,9 +1038,9 @@ class JarvisApp(ctk.CTk):
         text.insert("1.0", "\n".join(f"{k} = {v}" for k, v in self.discord["targets"].items()))
         auto = tk.BooleanVar(value=self.discord["auto"])
         self.checkbox(win, "ส่งทันทีโดยไม่ต้องกดอนุญาต (เฉพาะรายชื่อด้านบน)", auto).pack(anchor="w", padx=22, pady=10)
-        self.label(win, f"กฎที่ Jarvis บังคับเสมอ\n• ส่งได้เฉพาะรายชื่อด้านบน\n• ไม่เกิน {DISCORD_PER_HOUR} ข้อความต่อชั่วโมง\n"
+        self.label(win, f"กฎที่ Victor บังคับเสมอ\n• ส่งได้เฉพาะรายชื่อด้านบน\n• ไม่เกิน {DISCORD_PER_HOUR} ข้อความต่อชั่วโมง\n"
                         f"• บรรทัดเดียว ไม่เกิน {DISCORD_MAX} ตัวอักษร  • ห้าม @everyone / @here\n"
-                        "• ถ้า Discord ไม่อยู่หน้าสุด จะไม่พิมพ์และไม่กด Enter\n• ทุกข้อความที่ส่งจะแสดงในแชต Jarvis\n"
+                        "• ถ้า Discord ไม่อยู่หน้าสุด จะไม่พิมพ์และไม่กด Enter\n• ทุกข้อความที่ส่งจะแสดงในแชต Victor\n"
                         "• ปิดติ๊กด้านบน = ทุกข้อความต้องกดอนุญาตก่อน",
                    T.LABEL, T.MUTED, justify="left").pack(anchor="w", padx=22)
         def save():
@@ -1113,7 +1113,7 @@ class JarvisApp(ctk.CTk):
 
     def speak(self, text):
         if not engine.local_speech_installed() and not self.key:
-            self.add_message("STATUS", "ติดตั้งเสียงในเครื่อง หรือใส่ Gemini API key ก่อน Jarvis จึงจะพูดได้")
+            self.add_message("STATUS", "ติดตั้งเสียงในเครื่อง หรือใส่ Gemini API key ก่อน Victor จึงจะพูดได้")
             return
         self.silence()
         self.mark_listening(False)
@@ -1131,7 +1131,7 @@ class JarvisApp(ctk.CTk):
         threading.Thread(target=work, daemon=True).start()
 
     def read_reply(self):
-        self.speak(self.last_reply or "สวัสดี ฉันคือ Jarvis พร้อมช่วยแล้ว")
+        self.speak(self.last_reply or "สวัสดี ฉันคือ Victor พร้อมช่วยแล้ว")
 
     # ---------- lifecycle ----------
 
@@ -1159,14 +1159,14 @@ class JarvisApp(ctk.CTk):
             row.destroy()
         self.bubbles.clear()
         self.input.delete("1.0", "end")
-        self.add_message("JARVIS", "A fresh conversation. What would you like to do?")
+        self.add_message("VICTOR", "A fresh conversation. What would you like to do?")
 
     # ---------- background mode ----------
 
     def start_tray(self):
         """The entry point calls this, so tests never create a real tray icon."""
         try:
-            self.tray = tray_ui.Tray(BASE / "jarvis.ico",
+            self.tray = tray_ui.Tray(BASE / "victor.ico",
                                      lambda event: self.events.put(("tray", 0, event)))
             self.tray.start()
         except (RuntimeError, OSError) as exc:
@@ -1197,7 +1197,7 @@ class JarvisApp(ctk.CTk):
     def toggle_wake(self):
         if self.wake_enabled.get():
             self.wake.start()
-            self.set_status("รอเรียก “Jarvis” • ฟังในเครื่องเท่านั้น", "listening")
+            self.set_status("รอเรียก “Victor” • ฟังในเครื่องเท่านั้น", "listening")
         else:
             self.wake.stop()
             self.set_status("Ready • Microphone off")
@@ -1240,11 +1240,11 @@ class JarvisApp(ctk.CTk):
 if __name__ == "__main__":
     import ctypes
     if not tray_ui.acquire_instance():
-        raise SystemExit(0)  # Jarvis is already running; that copy was asked to show its window.
-    # Own taskbar identity, so Windows shows the Jarvis icon instead of Python's.
-    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Jarvis.PersonalAssistant")
+        raise SystemExit(0)  # Victor is already running; that copy was asked to show its window.
+    # Own taskbar identity, so Windows shows the Victor icon instead of Python's.
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Victor.PersonalAssistant")
     try:
-        app = JarvisApp()
+        app = VictorApp()
         app.start_tray()
         app.mainloop()
     finally:

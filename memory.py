@@ -1,6 +1,6 @@
 """Persistent conversation and problem history. Model-proposed values are untrusted.
 
-Jarvis kept sixteen messages in a Python list and lost them on restart. This module
+Victor kept sixteen messages in a Python list and lost them on restart. This module
 is the disk behind that list: the application still holds a short window in memory
 for what it sends to the model, while everything ever said stays here.
 

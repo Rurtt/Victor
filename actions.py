@@ -84,7 +84,7 @@ def validate(action: dict) -> dict:
         if len(text) > DISCORD_MAX or any(c in text for c in "\n\r\t"):
             raise PolicyError(f"ข้อความ Discord ต้องเป็นบรรทัดเดียว ไม่เกิน {DISCORD_MAX} ตัวอักษร")
         if "@everyone" in text or "@here" in text:
-            raise PolicyError("ไม่อนุญาตให้ Jarvis ส่ง @everyone หรือ @here")
+            raise PolicyError("ไม่อนุญาตให้ Victor ส่ง @everyone หรือ @here")
     return {"name": name, "arguments": clean}
 
 
@@ -102,11 +102,11 @@ def describe(action: dict) -> str:
     if name == "media":
         return "Send media command: " + args["command"].replace("_", " ")
     if name == "control_screen":
-        return ("ให้ Jarvis ดูหน้าจอหลักและทำงานนี้:\n" + args["goal"] +
+        return ("ให้ Victor ดูหน้าจอหลักและทำงานนี้:\n" + args["goal"] +
                 "\n\nภาพหน้าจอจะถูกส่งให้ Gemini ทุกขั้น และคุณต้องอนุญาตทุกคลิก")
     if name == "discord_send":
         return f"ส่งข้อความ Discord ในชื่อบัญชีของคุณ ถึง {args['target']}:\n\n{args['text']}"
-    return "Create a new text file in Jarvis/notes:\n\n" + args["text"]
+    return "Create a new text file in Victor/notes:\n\n" + args["text"]
 
 
 class ActionGate:
@@ -181,7 +181,7 @@ class WindowsActions:
             notes = self.base / "notes"
             notes.mkdir(exist_ok=True)
             if notes.is_symlink() or notes.is_junction() or notes.resolve().parent != self.base:
-                raise PolicyError("Notes folder must stay inside Jarvis.")
+                raise PolicyError("Notes folder must stay inside Victor.")
             from datetime import datetime
             dest = notes / (datetime.now().strftime("%Y-%m-%d_%H%M%S_") + secrets.token_hex(3) + ".txt")
             with dest.open("x", encoding="utf-8") as f:

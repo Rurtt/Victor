@@ -9,7 +9,7 @@ try {
     if (-not $english) { throw 'Windows English speech recognition is not installed. Install English speech in Windows language settings.' }
     $recognizer = New-Object System.Speech.Recognition.SpeechRecognitionEngine($english)
     $choices = New-Object System.Speech.Recognition.Choices
-    $choices.Add([string[]]@('Jarvis', 'Hey Jarvis'))
+    $choices.Add([string[]]@('Victor', 'Hey Victor'))
     $builder = New-Object System.Speech.Recognition.GrammarBuilder
     $builder.Culture = $english.Culture
     $builder.Append($choices)
