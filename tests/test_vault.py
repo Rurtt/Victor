@@ -109,5 +109,79 @@ class SelectionTests(unittest.TestCase):
             self.assertEqual(Vault(root).style_guide(), "")
 
 
+NOTE = {"slug": "monotonic-deque", "type": "concept", "tags": ["dp", "queue"],
+        "lang": "th", "body": "คิวที่เก็บค่าเรียงลง ใช้กับ sliding window"}
+
+
+class WriteTests(unittest.TestCase):
+    def test_a_rendered_page_carries_every_required_frontmatter_field(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            build(root, [])
+            page = Vault(root).render(NOTE, today="2026-09-18")
+            for field in ("name: monotonic-deque", "type: concept",
+                          "tags: [dp, queue]", "lang: th", "sources: 1",
+                          "date: 2026-09-18"):
+                self.assertIn(field, page)
+            self.assertTrue(page.startswith("---\n"))
+
+    def test_saving_writes_the_page_updates_the_index_and_appends_the_log(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            build(root, [("dp-note", "concept", ["dp"], "เก่า")])
+            vault = Vault(root)
+            written = vault.save(NOTE, "จดเทคนิคจากโจทย์ sliding window")
+
+            self.assertTrue(written.exists())
+            self.assertEqual(written.parent, root / "wiki")
+            index = (root / "index.md").read_text(encoding="utf-8")
+            self.assertIn("[[monotonic-deque]]", index)
+            self.assertIn("[[dp-note]]", index)
+            log = (root / "log.md").read_text(encoding="utf-8")
+            self.assertIn("จดเทคนิคจากโจทย์ sliding window", log)
+
+    def test_the_log_is_only_ever_appended_to(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            build(root, [])
+            vault = Vault(root)
+            vault.save(NOTE, "ครั้งแรก")
+            first = (root / "log.md").read_text(encoding="utf-8")
+            vault.save({**NOTE, "slug": "dp-on-trees"}, "ครั้งที่สอง")
+            second = (root / "log.md").read_text(encoding="utf-8")
+            self.assertTrue(second.startswith(first))
+            self.assertIn("ครั้งที่สอง", second)
+
+    def test_a_slug_that_escapes_the_wiki_folder_is_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            build(root, [])
+            for bad in ("../escape", "..\\escape", "sub/dir", "C:/Windows/evil"):
+                with self.assertRaises(VaultError):
+                    Vault(root).save({**NOTE, "slug": bad}, "ไม่ควรเขียน")
+
+    def test_raw_is_never_written(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            build(root, [])
+            (root / "raw" / "source.txt").write_text("ของเดิม", encoding="utf-8")
+            before = sorted(p.name for p in (root / "raw").rglob("*"))
+            Vault(root).save(NOTE, "เขียนหน้าใหม่")
+            after = sorted(p.name for p in (root / "raw").rglob("*"))
+            self.assertEqual(before, after)
+            self.assertEqual((root / "raw" / "source.txt").read_text(encoding="utf-8"),
+                             "ของเดิม")
+
+    def test_saving_over_an_existing_page_bumps_its_source_count(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            build(root, [])
+            vault = Vault(root)
+            vault.save(NOTE, "ครั้งแรก")
+            vault.save(NOTE, "ปรับปรุง")
+            page = (root / "wiki" / "monotonic-deque.md").read_text(encoding="utf-8")
+            self.assertIn("sources: 2", page)
+
+
 if __name__ == "__main__":
     unittest.main()

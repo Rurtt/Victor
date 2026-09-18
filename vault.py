@@ -7,11 +7,17 @@ untrusted text when it reaches a prompt. Nothing here ever writes to raw/.
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import date
 import re
 
 STYLE_GUIDE = "style-guide"
 FRONTMATTER = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n", re.DOTALL)
 MAX_PAGE = 100_000
+
+SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+TYPE_ORDER = ("source", "concept", "entity", "synthesis", "query")
+TYPE_HEADING = {"source": "Sources", "concept": "Concepts", "entity": "Entities",
+                "synthesis": "Syntheses", "query": "Queries"}
 
 
 class VaultError(RuntimeError):
@@ -95,3 +101,60 @@ class Vault:
 
     def style_guide(self, budget: int = 1500) -> str:
         return self.page(STYLE_GUIDE)[:budget]
+
+    def _destination(self, slug: str) -> Path:
+        if not isinstance(slug, str) or not SLUG.fullmatch(slug) or len(slug) > 120:
+            raise VaultError("slug ต้องเป็น kebab-case และห้ามมีเส้นทางไฟล์")
+        path = (self.wiki / f"{slug}.md").resolve()
+        if path.parent != self.wiki.resolve():
+            raise VaultError("หน้า wiki ต้องอยู่ในโฟลเดอร์ wiki เท่านั้น")
+        return path
+
+    def render(self, note: dict, *, sources: int = 1, today: str | None = None) -> str:
+        today = today or date.today().isoformat()
+        tags = ", ".join(note.get("tags") or [])
+        return (f"---\nname: {note['slug']}\ntype: {note['type']}\n"
+                f"tags: [{tags}]\nlang: {note['lang']}\nsources: {sources}\n"
+                f"date: {today}\n---\n\n{note['body'].strip()}\n")
+
+    def save(self, note: dict, summary: str, *, today: str | None = None) -> Path:
+        """Write one page, then refresh index.md and append to log.md.
+
+        The user has already approved this page in the desktop UI; the checks here
+        are against a malformed slug, not against the user's intent.
+        """
+        destination = self._destination(note["slug"])
+        existed = destination.exists()
+        sources = 1
+        if existed:
+            previous = destination.read_text(encoding="utf-8")
+            match = re.search(r"^sources:\s*(\d+)", previous, re.MULTILINE)
+            sources = int(match.group(1)) + 1 if match else 2
+        destination.write_text(self.render(note, sources=sources, today=today),
+                               encoding="utf-8")
+        self._cache = None  # the catalogue is stale now
+        self.rebuild_index(today=today)
+        self.append_log("update" if existed else "ingest", note["slug"], summary,
+                        today=today)
+        return destination
+
+    def rebuild_index(self, today: str | None = None):
+        today = today or date.today().isoformat()
+        entries = self.catalogue()
+        lines = [f"# Wiki Index\nLast updated: {today} | Total pages: {len(entries)}\n"]
+        for kind in TYPE_ORDER:
+            group = [e for e in entries if e["type"] == kind]
+            if not group:
+                continue
+            lines.append(f"## {TYPE_HEADING[kind]} ({len(group)})")
+            lines += [f"- [[{e['slug']}]]" for e in group]
+            lines.append("")
+        self.index.write_text("\n".join(lines), encoding="utf-8")
+
+    def append_log(self, action: str, title: str, description: str,
+                   today: str | None = None):
+        today = today or date.today().isoformat()
+        if action not in ("ingest", "query", "lint", "update"):
+            raise VaultError("action ของ log ไม่ถูกต้อง")
+        with self.log.open("a", encoding="utf-8") as handle:
+            handle.write(f"\n## [{today}] {action} | {title}\n{description}\n")
