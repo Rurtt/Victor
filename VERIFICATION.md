@@ -1,11 +1,28 @@
-# Verification — 2026-09-16
+# Verification — 2026-09-18
 
 ## Passed
 
-- 76 automated tests (`python -m unittest discover -s tests`) across the policy
+- 164 automated tests (`python -m unittest discover -s tests`) across the policy
   layer, cloud request handling, speech cancellation, provider routing, the tray
-  message loop, the wake-word turn, and real Tk desktop flows with simulated AI
-  results.
+  message loop, the wake-word turn, the mentor ladder and wiki flow, and real Tk
+  desktop flows with simulated AI results.
+- Conversation history survives a restart, and starting a new chat is not undone
+  by one. History lives in `data/jarvis.db`; the sixteen-message cap now governs
+  only what is sent to the model.
+- The hint ladder is enforced in Python: a model reply proposing rung 5 against a
+  stored rung of 1 is clamped to 2, rung 1 is refused without an attempt, and rung
+  4 is refused until an attempt carries a verdict. A problem a reply names starts
+  at rung 0 if new, and a given-up problem stays given-up even when a later reply
+  proposes "working" again.
+- An attempt is recorded either on the model's own flag, or — read from the
+  user's text in Python, never from the model — a verdict word (`AC`/`WA`/`TLE`/
+  `RE`) or C++-looking text (`#include` / `int main`, recorded `unsubmitted`).
+- Mentor replies cannot carry PC actions; the schema has no actions key. The
+  Summarize flow never routes to the mentor, even while Mentor mode is on.
+- Wiki writes stay inside `wiki/`, `log.md` is only ever appended to, and `raw/`
+  is never written. Saving a note that would replace an existing page warns in
+  the dialog first. The vault reader skips a page it cannot decode and notices a
+  page edited in place in Obsidian, since each page's own mtime is checked.
 - `python app.py` starts clean with no stderr output.
 - Measured idle cost on this PC: 0.55 % of one core and 59 MB resident, against
   2.73 % and 60 MB for the previous build over the same 20-second idle window.
@@ -31,6 +48,18 @@
 - No live Claude request was made either. `claude auth status` reported a
   signed-in Pro subscription, but the `claude -p` call path in `claude_brain.py`
   is exercised only against mocks.
+- No live mentor request was made. `claude_brain.ask_mentor` is exercised only
+  against mocks, as the chat path already is.
+- The study vault at `D:\Jarvis\Study` was created by hand; page writes against a
+  real Obsidian vault have not been observed outside temporary directories.
+- Mentor turns run inline on the Tk thread (`mentor_turn` in `app.py`): the
+  window freezes for the length of the call and Stop cannot cancel it, unlike
+  the worker-thread chat path. Moving it onto that same machinery is the next
+  change, and should happen before this is used under time pressure.
+- The style-guide interview from spec §5.6 (Jarvis drafting the `style-guide`
+  page from a first-session interview) was not built. Write that page in
+  Obsidian by hand; without it mentor mode still works, just without an
+  adapted voice.
 - `scripts\install-voice.ps1` has never been run end to end. The pinned SHA-256
   values were read from the GitHub and Hugging Face APIs on 2026-09-16; the
   download, extraction and manifest write are untested.
