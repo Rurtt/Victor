@@ -10,6 +10,7 @@ import app
 from app import MAX_ROWS, JarvisApp
 from brain import Reply
 from local_store import LocalStore
+from thai import tr
 
 
 class DesktopFlowTests(unittest.TestCase):
@@ -291,6 +292,277 @@ class PersistentHistoryTests(unittest.TestCase):
             self.assertEqual(revived.history, [])
         finally:
             revived.close()
+
+
+class MentorModeTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.app = JarvisApp(store=LocalStore(Path(self.temp.name)))
+        self.app.withdraw()
+        self.app.study = None  # never touch the real D:\Jarvis\Study vault in tests
+
+    def tearDown(self):
+        self.app.close()
+        self.temp.cleanup()
+
+    def test_the_ladder_is_clamped_before_anything_is_shown(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        problem = a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp")
+        a.memory.set_rung(problem, 1)
+        a.memory.add_attempt(problem, "แนวคิด: ลองทุกกรณี")   # no verdict
+
+        reply = mentor.MentorReply("เฉลยเต็ม ๆ", 5,
+                                   {"slug": "knapsack-th", "title": "Knapsack",
+                                    "topic": "dp", "status": "working"}, [], None)
+        with patch("app.ask_mentor", return_value=reply):
+            a.mentor_turn("ขอโค้ดเลย")
+
+        self.assertEqual(a.memory.problem("knapsack-th")["rung"], 2)
+        shown = a.bubbles[-1][1].cget("text")
+        self.assertIn("[ขั้น 2/5", shown)
+        # The model proposed rung 5 but was only granted 2 — the over-rung text
+        # itself must never reach the screen or the conversation history.
+        self.assertNotIn("เฉลยเต็ม ๆ", shown)
+        self.assertIn(mentor.WITHHELD, shown)
+        self.assertNotIn("เฉลยเต็ม ๆ", "\n".join(t["text"] for t in a.history))
+
+    def test_an_over_rung_reply_on_the_same_problem_is_withheld(self):
+        """Same-problem case: the reply names the problem already in play, but
+        proposes a rung it hasn't earned yet (no attempt on record)."""
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp")
+
+        reply = mentor.MentorReply("ใช้เทคนิค DP", 3,
+                                   {"slug": "knapsack-th", "title": "Knapsack",
+                                    "topic": "dp", "status": "working"}, [], None)
+        with patch("app.ask_mentor", return_value=reply):
+            a.mentor_turn("บอกเทคนิคหน่อย")
+
+        self.assertEqual(a.memory.problem("knapsack-th")["rung"], 0)
+        shown = a.bubbles[-1][1].cget("text")
+        self.assertIn("[ขั้น 0/5", shown)
+        self.assertIn(mentor.WITHHELD, shown)
+        self.assertNotIn("ใช้เทคนิค DP", shown)
+
+    def test_an_over_rung_reply_with_no_problem_is_withheld_without_a_prefix(self):
+        """No current problem and the model names none either: target_id stays
+        None, so the withhold check must fall back to the pre-call ceiling
+        instead of trusting an unrecorded rung."""
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        reply = mentor.MentorReply("นี่คือเฉลยเต็ม ๆ", 5, None, [], None)
+        with patch("app.ask_mentor", return_value=reply):
+            a.mentor_turn("ขอเฉลยเลย")
+
+        shown = a.bubbles[-1][1].cget("text")
+        self.assertNotIn("นี่คือเฉลยเต็ม ๆ", shown)
+        self.assertEqual(shown, mentor.WITHHELD)  # no problem → no rung prefix
+        self.assertNotIn("นี่คือเฉลยเต็ม ๆ", "\n".join(t["text"] for t in a.history))
+
+    def test_the_override_records_a_give_up_and_opens_the_last_rung(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        problem = a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp")
+        a.memory.add_attempt(problem, "int main(){}", verdict="WA")
+
+        reply = mentor.MentorReply("นี่คือเฉลย", 5,
+                                   {"slug": "knapsack-th", "title": "Knapsack",
+                                    "topic": "dp", "status": "working"}, [], None)
+        with patch("app.ask_mentor", return_value=reply):
+            a.mentor_turn("เปิดเฉลย")
+
+        row = a.memory.problem("knapsack-th")
+        self.assertEqual(row["status"], "given-up")
+        self.assertEqual(row["rung"], 5)
+
+    def test_failure_tags_are_stored_and_reach_the_profile(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        problem = a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp")
+        a.memory.add_attempt(problem, "int main(){}", verdict="WA")
+
+        reply = mentor.MentorReply("state ผิด", 1,
+                                   {"slug": "knapsack-th", "title": "Knapsack",
+                                    "topic": "dp", "status": "working"},
+                                   [{"tag": "wrong-state", "note": None}], None)
+        with patch("app.ask_mentor", return_value=reply):
+            a.mentor_turn("ลองแล้วไม่ผ่าน")
+
+        self.assertEqual(a.memory.profile("dp"), [("wrong-state", 1)])
+
+    def test_a_mentor_turn_never_produces_a_pc_proposal(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        reply = mentor.MentorReply("ลองอ่านโจทย์อีกที", 0, None, [], None)
+        with patch("app.ask_mentor", return_value=reply):
+            a.mentor_turn("เปิด spotify ให้หน่อย")
+        self.assertEqual(a.proposals, [])
+
+    def test_a_model_error_is_shown_and_does_not_break_the_window(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        with patch("app.ask_mentor", side_effect=mentor.MentorError("คำตอบว่าง")):
+            a.mentor_turn("ข้อนี้ทำไงดี")
+        self.assertIn("คำตอบว่าง", a.bubbles[-1][1].cget("text"))
+
+    def test_mentor_mode_survives_a_restart(self):
+        a = self.app
+        a.mentor_mode = True
+        a.store.save_settings(a.model, mentor=True)
+        a.close()
+        self.app = JarvisApp(store=LocalStore(Path(self.temp.name)))
+        self.app.withdraw()
+        self.assertTrue(self.app.mentor_mode)
+
+    def test_the_current_message_reaches_the_model(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        reply = mentor.MentorReply("ลองอ่านโจทย์อีกที", 0, None, [], None)
+        with patch("app.ask_mentor", return_value=reply) as fake_ask:
+            a.mentor_turn("มีโจทย์ knapsack ต้องช่วยด้วย")
+        sent = fake_ask.call_args.args[1]
+        self.assertIn("มีโจทย์ knapsack ต้องช่วยด้วย", sent)
+
+    def test_a_cross_slug_reply_cannot_exceed_the_new_problems_gates(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        old = a.memory.upsert_problem("old-th", "Old", topic="dp")
+        a.memory.set_rung(old, 3)
+        a.memory.add_attempt(old, "int main(){}", verdict="WA")
+
+        reply = mentor.MentorReply("นี่คือโจทย์ใหม่ เฉลยเลย", 5,
+                                   {"slug": "new-th", "title": "New",
+                                    "topic": "dp", "status": "working"}, [], None)
+        with patch("app.ask_mentor", return_value=reply):
+            a.mentor_turn("เปลี่ยนโจทย์ ข้อนี้เลย")
+
+        self.assertEqual(a.memory.problem("new-th")["rung"], 0)
+        self.assertEqual(a.memory.problem("old-th")["rung"], 3)
+        shown = a.bubbles[-1][1].cget("text")
+        self.assertIn("[ขั้น 0/5", shown)
+        # Moving to a new problem must never leak a rung-5 solution under a
+        # rung-0 label.
+        self.assertNotIn("นี่คือโจทย์ใหม่ เฉลยเลย", shown)
+        self.assertIn(mentor.WITHHELD, shown)
+        self.assertNotIn("นี่คือโจทย์ใหม่ เฉลยเลย", "\n".join(t["text"] for t in a.history))
+
+    def test_a_no_slug_override_records_a_give_up_on_the_current_problem(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        problem = a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp")
+        a.memory.add_attempt(problem, "int main(){}", verdict="WA")
+
+        reply = mentor.MentorReply("นี่คือเฉลย", 5, None, [], None)
+        with patch("app.ask_mentor", return_value=reply):
+            a.mentor_turn("เปิดเฉลย")
+
+        row = a.memory.problem("knapsack-th")
+        self.assertEqual(row["status"], "given-up")
+        self.assertEqual(row["rung"], 5)
+
+    def test_a_given_up_problem_stays_given_up_when_the_model_says_working(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        problem = a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp")
+        a.memory.set_rung(problem, 5)
+        a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp", status="given-up")
+
+        reply = mentor.MentorReply("ลองดูใหม่นะ", 1,
+                                   {"slug": "knapsack-th", "title": "Knapsack",
+                                    "topic": "dp", "status": "working"}, [], None)
+        with patch("app.ask_mentor", return_value=reply):
+            a.mentor_turn("ลองใหม่อีกครั้ง")
+
+        self.assertEqual(a.memory.problem("knapsack-th")["status"], "given-up")
+
+    def test_an_attempt_with_a_typed_verdict_is_recorded(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        problem = a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp")
+        a.memory.add_attempt(problem, "แนวคิด: ลองทุกกรณี")  # no verdict yet
+
+        reply = mentor.MentorReply("โอเค ลองดูจุดนี้", 1,
+                                   {"slug": "knapsack-th", "title": "Knapsack",
+                                    "topic": "dp", "status": "working"}, [], None)
+        with patch("app.ask_mentor", return_value=reply):
+            a.mentor_turn("ส่งไปได้ WA ครับ")
+
+        attempts = a.memory.attempts(problem)
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual(attempts[-1]["verdict"], "WA")
+
+    def test_an_attempt_on_a_brand_new_problem_is_recorded(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        reply = mentor.MentorReply("เข้าใจแล้ว มาดูกัน", 0,
+                                   {"slug": "new-th", "title": "New",
+                                    "topic": "dp", "status": "working"},
+                                   [], None, attempt=True)
+        with patch("app.ask_mentor", return_value=reply):
+            a.mentor_turn("นี่คือโค้ดของผม ได้ WA")
+
+        row = a.memory.problem("new-th")
+        attempts = a.memory.attempts(row["id"])
+        self.assertEqual(len(attempts), 1)
+        self.assertEqual(attempts[0]["verdict"], "WA")
+        self.assertEqual(row["rung"], 0)
+
+    def test_a_turn_with_no_problem_has_no_rung_prefix(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        reply = mentor.MentorReply("ลองอ่านโจทย์อีกที", 0, None, [], None)
+        with patch("app.ask_mentor", return_value=reply):
+            a.mentor_turn("สวัสดีครับ")
+        self.assertEqual(a.bubbles[-1][1].cget("text"), "ลองอ่านโจทย์อีกที")
+
+    def test_a_memory_error_during_recording_still_shows_a_reply(self):
+        import mentor
+        from memory import MemoryError as MemErr
+        a = self.app
+        a.mentor_mode = True
+        problem = a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp")
+        a.memory.add_attempt(problem, "int main(){}", verdict="WA")  # earns rung 1
+        reply = mentor.MentorReply("นี่คือคำตอบ", 1,
+                                   {"slug": "knapsack-th", "title": "Knapsack",
+                                    "topic": "dp", "status": "working"}, [], None)
+        with patch("app.ask_mentor", return_value=reply), \
+             patch.object(a.memory, "set_rung", side_effect=MemErr("บันทึกไม่ได้")):
+            a.mentor_turn("ลองดูอีกที")
+        kinds = [kind for _row, _text, kind in a.bubbles]
+        self.assertIn("ERROR", kinds)
+        # The rung was earned (attempt with a verdict on record), so this is an
+        # honest reply, not an over-rung one — the DB failure alone must not
+        # withhold text the user was entitled to.
+        self.assertIn("นี่คือคำตอบ", a.bubbles[-1][1].cget("text"))
+
+    def test_offer_note_warns_when_the_page_already_exists(self):
+        a = self.app
+        a.study = Mock()
+        a.study.wiki = Path(self.temp.name)
+        (a.study.wiki / "dp-intro.md").write_text("old content", encoding="utf-8")
+        a.study.render.return_value = "---\nname: dp-intro\n---\n\nnew content\n"
+        note = {"slug": "dp-intro", "type": "concept", "tags": ["dp"], "lang": "th",
+                "body": "new content"}
+        with patch("app.messagebox.askyesno", return_value=False) as fake_ask:
+            a.offer_note(note)
+        message = fake_ask.call_args.args[1]
+        self.assertIn(tr("This page already exists and will be replaced."), message)
 
 
 if __name__ == "__main__":

@@ -20,6 +20,8 @@ from brain import MAX_INPUT, RETRYING, BrainError
 import engine
 from engine import DEFAULT_MODEL, ask, ask_screen
 import local_voice
+import mentor
+from engine import ask_mentor
 import screen
 import theme as T
 import tray as tray_ui
@@ -27,8 +29,10 @@ import voice
 from local_store import LocalStore, StorageError
 from memory import Memory, MemoryError
 from thai import tr
+from vault import Vault, VaultError
 
 BASE = Path(__file__).resolve().parent
+STUDY_VAULT = Path(r"D:\Jarvis\Study")
 MAX_SCREEN_STEPS = 25
 MAX_ROWS = 200
 PILL = {  # state: (text, text color, background)
@@ -104,6 +108,12 @@ class JarvisApp(ctk.CTk):
         # The database is the history; self.history is only the window we send upstream.
         self.memory = Memory(self.store.directory.parent)
         self.history = self.memory.recent_turns()
+        self.mentor_mode = self.store.read_settings().get("mentor") is True
+        try:
+            self.study = Vault(STUDY_VAULT)
+            self.study.catalogue()
+        except (VaultError, OSError):
+            self.study = None  # mentor mode still works, just without wiki context
         self.last_reply = ""
         self.events = queue.Queue()
         self.generation = 0
@@ -198,8 +208,14 @@ class JarvisApp(ctk.CTk):
         self.button(self.sidebar, "+  New conversation", self.new_chat, primary=True).pack(fill="x", padx=14, pady=(0, 10))
         for text, command in self.nav_items():
             self.button(self.sidebar, text, command, anchor="w").pack(fill="x", padx=14, pady=4)
+        self.mentor_switch = ctk.CTkSwitch(
+            self.sidebar, text=tr("Mentor mode (POSN)"),
+            command=self.toggle_mentor_mode)
+        self.mentor_switch.pack(anchor="w", padx=16, pady=(4, 0))
+        if self.mentor_mode:
+            self.mentor_switch.select()
         self.button(self.sidebar, "Open program folder", self.open_program_folder).pack(side="bottom", fill="x", padx=14, pady=16)
-        self.label(self.sidebar, "Chat stays in memory. Sent messages go to your AI provider.", T.HINT, T.MUTED,
+        self.label(self.sidebar, "Chat history is saved on this PC.", T.HINT, T.MUTED,
                    justify="left").pack(side="bottom", anchor="w", padx=18, pady=(0, 12))
         self.connection = self.label(self.sidebar, "", T.LABEL, T.MUTED, wraplength=180, justify="left")
         self.connection.pack(side="bottom", anchor="w", padx=18, pady=(0, 8))
@@ -355,6 +371,15 @@ class JarvisApp(ctk.CTk):
         self.compact = not self.compact
         self.apply_layout(width)
 
+    def toggle_mentor_mode(self):
+        self.mentor_mode = bool(self.mentor_switch.get())
+        if self.mentor_mode:
+            self.auto_speak.set(False)  # competitive programming is a typed activity
+        try:
+            self.store.save_settings(self.model, mentor=self.mentor_mode)
+        except StorageError as exc:
+            self.add_message("ERROR", str(exc))
+
     # ---------- status ----------
 
     def set_status(self, text, state="ready"):
@@ -505,7 +530,7 @@ class JarvisApp(ctk.CTk):
                     self.store.save_key(new_key)
                 elif not remember.get():
                     self.store.forget_key()
-                self.store.save_settings(new_model)
+                self.store.save_settings(new_model, mentor=self.mentor_mode)
             except (StorageError, OSError) as exc:
                 messagebox.showerror("บันทึกไม่ได้", str(exc), parent=win)
                 return
@@ -532,6 +557,140 @@ class JarvisApp(ctk.CTk):
         self.input.delete("1.0", "end")
         self.submit(text)
 
+    def mentor_turn(self, prompt: str):
+        """One coaching turn: gather in Python, ask once, clamp, then store."""
+        # Remembered before any read below can fail: the model needs to see this
+        # turn, and the user's own message is never lost to a DB or vault error.
+        self.remember("user", prompt)
+        try:
+            problem = self.memory.current_problem()
+            attempts = self.memory.attempts(problem["id"]) if problem else []
+            topic = (problem or {}).get("topic") or ""
+            profile = self.memory.profile(topic) if topic else []
+            tags = [tag for tag, _ in profile]
+            similar = self.memory.similar_problems(topic, tags) if topic else []
+            style_guide = self.study.style_guide() if self.study else ""
+            pages = self.study.select(topic, tags) if (self.study and topic) else []
+        except (MemoryError, sqlite3.Error, VaultError, OSError) as exc:
+            self.add_message("ERROR", str(exc))
+            return
+
+        override = mentor.is_override(prompt)
+        stored = (problem or {}).get("rung", 0)
+        # A verdict typed this turn (before the model has even replied) counts
+        # toward the pre-call ceiling; an attempt only the model would recognise
+        # ("attempt": true on the reply) cannot — that unlock lands next turn.
+        verdict = mentor.verdict_in(prompt)
+        has_attempt = bool(attempts) or verdict is not None
+        has_verdict = any(a.get("verdict") for a in attempts) or verdict is not None
+        ceiling = mentor.MAX_RUNG if override else mentor.allowed_rung(
+            stored, mentor.MAX_RUNG, has_attempt=has_attempt, has_verdict=has_verdict)
+
+        text = mentor.build_prompt(
+            allowed=ceiling, problem=problem, attempts=attempts, profile=profile,
+            similar=similar, style_guide=style_guide, pages=pages,
+            turns=self.history[-8:])
+
+        try:
+            reply = ask_mentor(self.model, text)
+        except (BrainError, mentor.MentorError) as exc:
+            self.add_message("ERROR", str(exc))
+            return
+
+        target_id, granted = self.record_mentor_reply(prompt, problem, reply, override, verdict)
+        # With no problem to attribute the reply to (no current problem, model
+        # named none, or a DB error left target_id unset), fall back to the
+        # pre-call ceiling instead of trusting an unrecorded "granted".
+        limit = granted if target_id else ceiling
+        if not override and reply.rung > limit:
+            # The model wrote for a rung it was not granted. Never show or
+            # remember that text — only an honest label, if any, and a nudge back.
+            shown = f"{mentor.label(granted)} {mentor.WITHHELD}" if target_id else mentor.WITHHELD
+            self.remember("model", shown)
+            self.history = self.history[-16:]
+            self.add_message("JARVIS", shown)
+            self.last_reply = shown
+            return
+        shown = f"{mentor.label(granted)} {reply.text}" if target_id else reply.text
+        self.remember("model", shown)
+        self.history = self.history[-16:]
+        self.add_message("JARVIS", shown)
+        self.last_reply = shown
+        if reply.note and self.study:
+            self.offer_note(reply.note)
+
+    def record_mentor_reply(self, prompt, problem, reply, override, verdict):
+        """Attribute this turn's rung to the problem the reply is actually about.
+
+        The reply may name a different (or brand new) problem than the one the
+        ladder was clamped against before the call — that problem's own rung and
+        attempts are what govern what it is allowed to receive, never the one the
+        conversation happened to be on. All reads and writes share one guard, so a
+        DB error partway through cannot escape the turn. Returns (target_id,
+        granted); target_id is None when there is no problem to record anything
+        against.
+        """
+        target_id, granted = None, 0
+        try:
+            if reply.problem:
+                # Upsert first: a slug the DB has never seen needs a real row —
+                # and id — before an attempt or a rung can be attached to it.
+                target = self.memory.problem(reply.problem["slug"])
+                target_stored = target["rung"] if target else 0  # upsert never touches rung
+                # A give-up is the enforcement record (spec 5.4): the model
+                # cannot revive a given-up problem by proposing "working" again.
+                sticky_given_up = target is not None and target.get("status") == "given-up"
+                status = ("given-up" if (override or sticky_given_up)
+                          else reply.problem.get("status", "working"))
+                target_id = self.memory.upsert_problem(
+                    reply.problem["slug"], reply.problem["title"],
+                    topic=reply.problem.get("topic"), status=status)
+            else:
+                target_id = problem["id"] if problem else None
+                target_stored = problem["rung"] if problem else 0
+
+            granted = target_stored  # fallback if a later write fails before this is recomputed
+            target_attempts = self.memory.attempts(target_id) if target_id else []
+            if target_id and not override and (reply.attempt or verdict):
+                self.memory.add_attempt(target_id, prompt, verdict=verdict)
+                target_attempts = self.memory.attempts(target_id)
+
+            has_attempt = bool(target_attempts)
+            has_verdict = any(a.get("verdict") for a in target_attempts)
+            granted = mentor.MAX_RUNG if override else mentor.allowed_rung(
+                target_stored, reply.rung, has_attempt=has_attempt, has_verdict=has_verdict)
+
+            if reply.problem:
+                self.memory.set_rung(target_id, granted)
+                if reply.failures and target_attempts:
+                    self.memory.add_failures(target_attempts[-1]["id"], reply.failures)
+            elif override and problem:
+                # The model gave up without restating the problem; the user's
+                # "เปิดเฉลย" still has to land somewhere.
+                self.memory.upsert_problem(problem["slug"], problem["title"],
+                                           topic=problem.get("topic"), status="given-up")
+                self.memory.set_rung(problem["id"], mentor.MAX_RUNG)
+            elif target_id:
+                self.memory.set_rung(target_id, granted)
+        except (MemoryError, sqlite3.Error) as exc:
+            self.add_message("ERROR", str(exc))
+        return target_id, granted
+
+    def offer_note(self, note: dict):
+        """Ask before writing to the wiki, then write automatically and log it."""
+        try:
+            preview = self.study.render(note)
+            message = f"{note['slug']} ({note['type']})\n\n{preview[:600]}"
+            if (self.study.wiki / f"{note['slug']}.md").exists():
+                message = tr("This page already exists and will be replaced.") + "\n" + message
+            if not messagebox.askyesno(tr("Save to wiki?"), message, parent=self):
+                return
+            description = (note["body"].strip().splitlines() or [""])[0][:120]
+            written = self.study.save(note, description)
+            self.add_message("STATUS", tr("Saved to wiki: ") + str(written))
+        except (VaultError, OSError) as exc:
+            self.add_message("ERROR", tr("Could not save to wiki: ") + str(exc))
+
     def retry_reporter(self, kind, generation):
         return lambda n, total: self.events.put((kind, generation, (n, total)))
 
@@ -546,6 +705,13 @@ class JarvisApp(ctk.CTk):
         self.send_button.configure(state="disabled")
         self.set_status(self.thinking_status(), "thinking")
         self.add_message("YOU", display or prompt)
+        if self.mentor_mode and not summary:
+            self.busy = False
+            self.send_button.configure(state="normal")
+            self.hands_free = False
+            self.mentor_turn(prompt)
+            self.set_status("Ready • Microphone off")
+            return
         history, key, model = list(self.history), self.key, self.model
         targets = list(self.discord["targets"])
         def work():

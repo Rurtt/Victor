@@ -324,10 +324,11 @@ Mentor mode has no `actions` array, so a vault write is not a PC action. It is t
 optional `note` object in `MENTOR_SCHEMA`.
 
 Jarvis validates the frontmatter fields against the vault's own enums in Python,
-renders the page, and presents it through the approval dialog the application already
-has — `self.proposals` and `update_pending`, reused rather than rewritten. On the user's
-click, Jarvis writes `wiki/<slug>.md`, regenerates `index.md` from the frontmatter
-catalogue, and appends one line to `log.md` in the existing format:
+renders the page, and presents it through a yes/no dialog (`messagebox.askyesno`),
+not the PC-action approval flow (`self.proposals` / `update_pending`) — a wiki
+write is not a PC action and needs no ticket. On the user's click, Jarvis writes
+`wiki/<slug>.md`, regenerates `index.md` from the frontmatter catalogue, and
+appends one line to `log.md` in the existing format:
 
 ```
 ## [YYYY-MM-DD] update | Title

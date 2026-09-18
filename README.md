@@ -123,6 +123,98 @@ Summarization cannot propose PC actions: responses containing an action are
 rejected by application code. Summary requests exclude earlier chat history.
 The resulting summary becomes part of this conversation; the raw document does
 not get appended to later chat turns. The source file is not modified.
+Summarize always goes to the ordinary chat path, never to the mentor, even
+while Mentor mode is on.
+
+## Mentor mode (POSN)
+
+Toggle **Mentor mode (POSN)** in the sidebar to turn Jarvis into a coach for
+your POSN Camp 2 problems instead of a general assistant. It proposes no PC
+actions — the schema it answers in has no `actions` key — and every turn is
+typed; the voice and screen-control features above are unrelated to it.
+Mentor mode needs a Claude model (`sonnet`, `haiku` or `opus`); with a Gemini
+model selected, every mentor turn errors instead of replying.
+
+Coaching moves through six rungs, one at a time. Jarvis can never hand out
+more than one rung above where the current problem already stands, and two
+rungs are gated further:
+
+0. อ่านโจทย์ — confirms you read the problem; no hint yet
+1. โครงสร้าง — needs an attempt on record first
+2. ขอบเขต — what the input bounds imply about the algorithm class
+3. เทคนิค — names the technique
+4. โครงโค้ด — pseudocode only, not C++; needs an attempt that carries a verdict
+5. เฉลย — the full C++ solution and where yours broke
+
+An attempt is recorded when the model flags your message as your own
+reasoning or code, or — read from your own text in Python, never from the
+model — when it contains a verdict word (`AC`, `WA`, `TLE`, `RE`) or looks
+like C++ (`#include` / `int main`, recorded as `unsubmitted`). A model-flagged
+attempt unlocks the next rung starting on your *next* message, not the one
+that triggered it. Known false positive: a question that merely mentions a
+verdict word (e.g. "TLE คืออะไร") is recorded as an attempt carrying that
+verdict. The verdict word must stand alone (a word boundary on both sides) and
+be uppercase, so a verdict word glued directly onto Thai script, or written in
+lowercase, is not detected at all.
+
+Each reply is filed against the problem it names, not necessarily the one the
+conversation was already on — naming a new problem starts it at rung 0, and a
+problem already given up on stays given-up even if a later reply proposes
+"working" again. Replies about a problem are prefixed `[ขั้น n/5: …]`;
+a general turn that names no problem carries no prefix. If the model writes a
+reply for a rung higher than the one it was actually granted — most often
+right after switching to a new problem — Jarvis withholds that text entirely:
+the label still shows the true rung, but the body is replaced with a short
+Thai nudge to say more about the problem, and nothing over-rung is ever
+stored in history either.
+
+Type **เปิดเฉลย** — and nothing else in the message — to jump straight to
+rung 5. The check is exact, not a substring match, so a sentence that merely
+contains the phrase (including a negation like "อย่าเปิดเฉลยนะ") does not
+trigger it. เปิดเฉลย also marks the current problem given-up — the record
+that you didn't reach the answer on your own — and that can't be undone by
+continuing to chat about the same problem.
+
+Jarvis's study wiki lives at `D:\Jarvis\Study`, reusing the page schema from
+your existing `D:\Jarvis\Luk Nong Pong` vault. When a reply proposes a note,
+Jarvis asks **"Save to wiki?"** before writing anything, and warns **"This
+page already exists and will be replaced."** first if a page with that slug
+is already there. Reading the vault skips any page it can't decode as UTF-8
+rather than failing the whole read, and notices a page you edited in place in
+Obsidian, since each page's own modified time is checked, not just the
+folder's.
+
+`D:\Jarvis\Study` is not created automatically — set it up once from
+PowerShell before turning mentor mode on:
+
+```powershell
+New-Item -ItemType Directory -Force "D:\Jarvis\Study\wiki", "D:\Jarvis\Study\raw\assets"
+Copy-Item "D:\Jarvis\Luk Nong Pong\CLAUDE.md" "D:\Jarvis\Study\CLAUDE.md"
+Set-Content "D:\Jarvis\Study\index.md" "# Wiki Index`nLast updated: 2026-09-17 | Total pages: 0" -Encoding utf8
+Set-Content "D:\Jarvis\Study\log.md" "# Log" -Encoding utf8
+```
+
+Then edit `D:\Jarvis\Study\CLAUDE.md`: change the `Vault:` line to
+`D:\Jarvis\Study\` and the `Domain:` line to `Study — competitive programming,
+POSN, CTF`. Change nothing else — the schema is reused verbatim. Without this
+step mentor mode still works, it just has no wiki context and cannot save
+notes.
+
+One page needs writing by hand: `style-guide`. The original plan for Jarvis
+to interview you for it on first use was not built in this version; without
+the page, Jarvis coaches without adapting to your writing style until you add
+it yourself.
+
+Mentor turns run synchronously on the UI thread: the window freezes for the
+length of the call and **Stop** does not cancel it, unlike the ordinary chat
+path. That's the next thing to fix — don't rely on mentor mode under a clock
+yet.
+
+All conversation history, mentor and ordinary chat alike, now lives in
+`data/jarvis.db` and survives a restart; starting a new conversation is not
+undone by one. The sixteen-message cap mentioned below under Access and data
+handling still governs only what is sent to the model each turn, not what is
+kept.
 
 ## Screen control (mouse and keyboard)
 
@@ -164,11 +256,13 @@ needs approval. Every send appears in the Jarvis chat.
   stored in `data/gemini-key.dpapi`, encrypted for your Windows account (DPAPI).
   It is never included in logs, prompts or PC actions. Other software running under your
   Windows account can still potentially inspect process memory.
-- Chat is held in memory and cleared on exit or New conversation. Recent chat
-  context is sent with follow-up messages (up to 16 entries and a size budget).
-  Windows itself may page process memory to disk.
+- Conversation history is stored in `data/jarvis.db` on this PC and survives a
+  restart. New conversation starts a fresh chat but keeps earlier ones in the
+  database; delete `data/jarvis.db` to erase it. Recent chat context is sent
+  with follow-up messages (up to 16 entries and a size budget), not the whole
+  database.
 - Google receives your sent messages and selected summary text. Its own retention
-  and data-use policies apply independently of this app's memory-only chat.
+  and data-use policies apply independently of how this app stores your chat.
   Unpaid services may use input/output for improvement and human review, with
   regional exceptions. Review [Google's terms](https://ai.google.dev/gemini-api/terms).
 - Screen capture happens only during an approved screen-control task. No clipboard
@@ -201,15 +295,17 @@ Run from this folder:
 python -m unittest discover -s tests -v
 ```
 
-76 tests. They check fake approval flags, prohibited commands, URL validation,
+164 tests. They check fake approval flags, prohibited commands, URL validation,
 single-use approvals, cancellation, note containment, summary action rejection,
 HTTP credential handling, late responses, speech cancellation, provider routing
 by model ID, the refusal to send audio to the cloud in Claude mode, the tray
-message loop and instance guard, the hands-free wake-word turn, and real Tk UI
-flows with simulated AI results and mocked PC effects.
+message loop and instance guard, the hands-free wake-word turn, real Tk UI
+flows with simulated AI results and mocked PC effects, the mentor hint ladder
+and wiki-note flow, and conversation history persisting in `data/jarvis.db`.
 
 Not covered by the suite: a live Claude or Gemini reply, a real microphone
-capture, audible playback, and an actual run of `scripts\install-voice.ps1`.
+capture, audible playback, an actual run of `scripts\install-voice.ps1`, and a
+mentor turn against a real study vault at `D:\Jarvis\Study`.
 Test those yourself from the desktop session.
 
 ## References used during implementation

@@ -107,6 +107,12 @@ TEXT = {
     "Chat stays in memory. Sent messages go to your AI provider.": "แชตนี้เก็บในหน่วยความจำ\nข้อความที่ส่งจะไปยังผู้ให้บริการ AI ที่เลือก",
     "Wake word": "คำเรียก “Jarvis”",
     "Enter sonnet, haiku, opus or a gemini-… model ID.": "ใส่ sonnet, haiku, opus หรือชื่อโมเดล gemini-…",
+    "Chat history is saved on this PC.": "ประวัติแชตถูกบันทึกไว้ในเครื่องนี้",
+    "Mentor mode (POSN)": "โหมดติวเตอร์ (สอวน.)",
+    "Save to wiki?": "บันทึกลงวิกิไหม?",
+    "This page already exists and will be replaced.": "หน้านี้มีอยู่แล้วและจะถูกแทนที่",
+    "Saved to wiki: ": "บันทึกลงวิกิแล้ว: ",
+    "Could not save to wiki: ": "บันทึกลงวิกิไม่สำเร็จ: ",
 }
 
 

@@ -58,6 +58,13 @@ def ask_screen(key, model, goal, done_steps, png, **kwargs):
     return _module(model).ask_screen(key, model, goal, done_steps, png, **kwargs)
 
 
+def ask_mentor(model, text, **kwargs):
+    """Mentor mode is Claude-only: the ladder needs this structured reply."""
+    if provider(model) != "claude":
+        raise BrainError("โหมดติวเตอร์ใช้ได้กับโมเดล Claude เท่านั้น เช่น sonnet")
+    return claude_brain.ask_mentor(model, text, **kwargs)
+
+
 def local_speech_installed() -> bool:
     """Cheap enough for the UI thread; ready() below hashes hundreds of megabytes."""
     return all(p.is_file() for p in (local_voice.MANIFEST, local_voice.CLI, local_voice.MODEL))

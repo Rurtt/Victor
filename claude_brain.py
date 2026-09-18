@@ -13,6 +13,7 @@ import threading
 import time
 
 from brain import BrainError, MAX_INPUT, SCHEMA, SCREEN_SYSTEM, SYSTEM, decode_reply, decode_step
+import mentor
 
 DEFAULT_MODEL = "sonnet"
 _LOCK = threading.Lock()
@@ -108,7 +109,7 @@ def _data(raw: bytes) -> dict:
         raise BrainError("Claude ส่งคำตอบผิดรูปแบบ จึงไม่รับคำสั่งควบคุมคอม") from None
 
 
-def _request(model, system, schema, content, cancelled=None):
+def _request(model, system, schema, content, cancelled=None, effort="low"):
     cancelled = cancelled or (lambda: False)
     if not re.fullmatch(r"(?:sonnet|haiku|opus|claude-[a-zA-Z0-9._-]{1,100})", model):
         raise BrainError("เลือกโมเดล Claude เช่น sonnet หรือ haiku")
@@ -127,7 +128,7 @@ def _request(model, system, schema, content, cancelled=None):
                 "--output-format", "stream-json", "--verbose",
                 "--system-prompt", system, "--json-schema", json.dumps(schema)]
         if model != "haiku":
-            args += ["--effort", "low"]
+            args += ["--effort", effort]
         message = {"type": "user", "message": {"role": "user", "content": content}}
         return _data(_run(args, (json.dumps(message, ensure_ascii=False) + "\n").encode("utf-8"), cancelled=cancelled))
     finally:
@@ -156,6 +157,16 @@ def ask(key, model, history, prompt, *, summary=False, discord_targets=(), on_re
     text = json.dumps({"conversation": context, "request": prompt}, ensure_ascii=False)
     return decode_reply(_gemini_payload(_request(model, system, SCHEMA, [{"type": "text", "text": text}], cancelled)),
                         allow_actions=not summary)
+
+
+def ask_mentor(model, text, *, cancelled=None):
+    """One coaching turn. Mentor mode has no PC actions and no cloud speech."""
+    if not isinstance(text, str) or not text.strip() or len(text) > MAX_INPUT:
+        raise BrainError(f"Enter between 1 and {MAX_INPUT:,} characters.")
+    # Coaching needs the reasoning a one-line chat reply does not.
+    data = _request(model, mentor.SYSTEM, mentor.MENTOR_SCHEMA,
+                    [{"type": "text", "text": text}], cancelled, effort="medium")
+    return mentor.decode(data)
 
 
 def ask_screen(key, model, goal, done_steps, png, *, on_retry=None, cancelled=None):
