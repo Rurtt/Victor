@@ -81,6 +81,9 @@ def _archive(item) -> Entry:
     if not all(isinstance(s, dict) and isinstance(s.get("in"), str)
                and isinstance(s.get("out"), str) for s in samples):
         raise BankError(f"{item.get('id')}: samples must be {{in, out}} strings")
+    # Archive items must have a URL (unlike Camp-1 which can be None)
+    if "url" not in item:
+        raise BankError(f"{item.get('id')}: archive item must have a url key")
     ident, title = str(item.get("id", "")), str(item.get("title", ""))
     lines = [f"# {title}", "",
              f"Level {item.get('level')} · {item.get('topic')} · real judge problem", "",

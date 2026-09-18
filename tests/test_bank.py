@@ -84,6 +84,14 @@ class LoaderTests(unittest.TestCase):
         with self.assertRaises(bank.BankError):
             bank.load(self.root)
 
+    def test_archive_must_have_url(self):
+        # Archive items require a URL; missing url key should raise BankError
+        item_without_url = dict(ARCHIVE_ITEM)
+        del item_without_url["url"]
+        self.write_archive([item_without_url])
+        with self.assertRaises(bank.BankError):
+            bank.load(self.root)
+
     def test_duplicate_ids_are_rejected(self):
         self.write_archive([ARCHIVE_ITEM, ARCHIVE_ITEM])
         with self.assertRaises(bank.BankError):
