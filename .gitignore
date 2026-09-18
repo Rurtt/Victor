@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+notes/
+.env
+*.key
+data/
+.superpowers/
