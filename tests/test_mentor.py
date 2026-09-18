@@ -139,5 +139,24 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(decoded.note["type"], "concept")
 
 
+class SystemPromptTests(unittest.TestCase):
+    def test_the_prompt_states_the_rules_python_actually_enforces(self):
+        for fragment in ("เปิดเฉลย", "C++", "ขั้น", "POSN"):
+            self.assertIn(fragment, mentor.SYSTEM)
+
+    def test_the_prompt_forbids_jumping_the_ladder(self):
+        self.assertIn("ทีละขั้น", mentor.SYSTEM)
+
+    def test_the_prompt_tells_the_model_it_has_no_tools(self):
+        self.assertIn("ไม่สามารถเปิดไฟล์", mentor.SYSTEM)
+
+    def test_notes_are_framed_as_the_users_assumptions_not_as_truth(self):
+        self.assertIn("ไม่ใช่ข้อเท็จจริง", mentor.NOTE_FRAME)
+        self.assertIn("ทางเลือกอื่น", mentor.NOTE_FRAME)
+
+    def test_the_prompt_fits_its_slice_of_the_budget(self):
+        self.assertLess(len(mentor.SYSTEM) + len(mentor.NOTE_FRAME), 1200)
+
+
 if __name__ == "__main__":
     unittest.main()
