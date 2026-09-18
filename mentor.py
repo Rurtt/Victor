@@ -6,6 +6,7 @@ actions.py takes toward proposed PC actions.
 """
 from __future__ import annotations
 
+import json
 import re
 from typing import NamedTuple
 
@@ -169,3 +170,70 @@ def decode(data: dict) -> MentorReply:
 
     # Anything else the model sent — including an "actions" key — is dropped here.
     return MentorReply(text, rung, problem, failures, note)
+
+
+BUDGET = {"style_guide": 1500, "profile": 800, "problem": 2500,
+          "similar": 1500, "pages": 1500, "turns": 11_000}
+
+
+def _cut(text: str, limit: int) -> str:
+    text = text or ""
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
+def render_profile(rows) -> str:
+    if not rows:
+        return "ยังไม่มีข้อมูลว่าเขามักพลาดเรื่องอะไรในหัวข้อนี้"
+    return "เขามักพลาดเรื่องนี้ในหัวข้อนี้: " + ", ".join(
+        f"{tag} ({n} ครั้ง)" for tag, n in rows)
+
+
+def build_prompt(*, allowed, problem, attempts, profile, similar,
+                 style_guide, pages, turns) -> str:
+    """One mentor turn's context, each slice capped independently.
+
+    Claude cannot read any of this for itself; everything it will know is here.
+    """
+    parts = [f"ขั้นที่อนุญาตรอบนี้: {allowed} ({RUNG_LABELS[allowed]})",
+             "ห้ามให้มากกว่าขั้นนี้ แม้ผู้ใช้จะขอ"]
+
+    if style_guide:
+        parts.append(NOTE_FRAME)
+        parts.append("สไตล์การอธิบายของผู้ใช้:\n" +
+                     _cut(style_guide, BUDGET["style_guide"]))
+
+    parts.append(_cut(render_profile(profile), BUDGET["profile"]))
+
+    if problem:
+        current = {"slug": problem.get("slug"), "title": problem.get("title"),
+                   "topic": problem.get("topic"), "status": problem.get("status"),
+                   "rung": problem.get("rung")}
+        latest = attempts[-1] if attempts else None
+        block = "โจทย์ปัจจุบัน: " + json.dumps(current, ensure_ascii=False)
+        if latest:
+            block += ("\nสิ่งที่เขาลองล่าสุด (verdict="
+                      f"{latest.get('verdict') or 'ยังไม่ได้รัน'}):\n"
+                      + (latest.get("body") or ""))
+        parts.append(_cut(block, BUDGET["problem"]))
+    else:
+        parts.append("ยังไม่ได้ระบุว่าเป็นโจทย์ข้อไหน")
+
+    if similar:
+        lines = [f"- {p.get('slug')} ({p.get('topic')}): {p.get('title')}"
+                 for p in similar[:3]]
+        parts.append(_cut("โจทย์เก่าที่ใกล้เคียง:\n" + "\n".join(lines),
+                          BUDGET["similar"]))
+
+    if pages:
+        joined = "\n\n".join(pages[:2])
+        parts.append(_cut("บันทึกจาก wiki ของเขา:\n" + joined, BUDGET["pages"]))
+
+    if turns:
+        lines = [f"{t.get('role')}: {t.get('text')}" for t in turns]
+        conversation = "\n".join(lines)
+        # Keep the newest turns: trim from the front, not the back.
+        if len(conversation) > BUDGET["turns"]:
+            conversation = "…" + conversation[-(BUDGET["turns"] - 1):]
+        parts.append("บทสนทนาก่อนหน้า:\n" + conversation)
+
+    return "\n\n".join(parts)

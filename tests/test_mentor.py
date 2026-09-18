@@ -158,5 +158,48 @@ class SystemPromptTests(unittest.TestCase):
         self.assertLess(len(mentor.SYSTEM) + len(mentor.NOTE_FRAME), 1200)
 
 
+class BudgetTests(unittest.TestCase):
+    def oversized(self):
+        return {
+            "allowed": 3,
+            "problem": {"slug": "knapsack-th", "title": "K" * 5000, "topic": "dp",
+                        "status": "working", "rung": 2},
+            "attempts": [{"body": "x" * 9000, "verdict": "WA"}],
+            "profile": [("wrong-state", 4), ("off-by-one", 2)],
+            "similar": [{"slug": f"p{n}", "title": "T" * 3000, "topic": "dp"}
+                        for n in range(9)],
+            "style_guide": "s" * 9000,
+            "pages": ["p" * 9000, "q" * 9000, "r" * 9000],
+            "turns": [{"role": "user", "text": "t" * 4000} for _ in range(40)],
+        }
+
+    def test_every_slice_is_capped_and_the_total_stays_under_the_limit(self):
+        prompt = mentor.build_prompt(**self.oversized())
+        self.assertLess(len(prompt), 21_000)
+
+    def test_no_slice_is_dropped_entirely_when_everything_is_oversized(self):
+        prompt = mentor.build_prompt(**self.oversized())
+        for marker in ("knapsack-th", "wrong-state", "sss", "ppp", "ttt"):
+            self.assertIn(marker, prompt)
+
+    def test_the_allowed_rung_is_stated_to_the_model(self):
+        prompt = mentor.build_prompt(**{**self.oversized(), "allowed": 4})
+        self.assertIn("ขั้นที่อนุญาตรอบนี้: 4", prompt)
+
+    def test_an_empty_profile_says_so_rather_than_being_silent(self):
+        self.assertIn("ยังไม่มีข้อมูล", mentor.render_profile([]))
+
+    def test_a_profile_ranks_what_the_user_gets_wrong(self):
+        rendered = mentor.render_profile([("wrong-state", 4), ("off-by-one", 1)])
+        self.assertIn("wrong-state", rendered)
+        self.assertIn("4", rendered)
+
+    def test_a_first_session_with_nothing_stored_still_builds_a_prompt(self):
+        prompt = mentor.build_prompt(allowed=0, problem=None, attempts=[], profile=[],
+                                     similar=[], style_guide="", pages=[], turns=[])
+        self.assertIn("ขั้นที่อนุญาตรอบนี้: 0", prompt)
+        self.assertIn("ยังไม่มีข้อมูล", prompt)
+
+
 if __name__ == "__main__":
     unittest.main()
