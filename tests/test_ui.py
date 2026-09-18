@@ -293,5 +293,106 @@ class PersistentHistoryTests(unittest.TestCase):
             revived.close()
 
 
+class MentorModeTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.app = JarvisApp(store=LocalStore(Path(self.temp.name)))
+        self.app.withdraw()
+        self.app.study = None  # never touch the real D:\Jarvis\Study vault in tests
+
+    def tearDown(self):
+        self.app.close()
+        self.temp.cleanup()
+
+    def test_the_ladder_is_clamped_before_anything_is_shown(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        problem = a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp")
+        a.memory.set_rung(problem, 1)
+        a.memory.add_attempt(problem, "แนวคิด: ลองทุกกรณี")   # no verdict
+
+        reply = mentor.MentorReply("เฉลยเต็ม ๆ", 5,
+                                   {"slug": "knapsack-th", "title": "Knapsack",
+                                    "topic": "dp", "status": "working"}, [], None)
+        with patch("app.ask_mentor", return_value=reply):
+            a.mentor_turn("ขอโค้ดเลย")
+
+        self.assertEqual(a.memory.problem("knapsack-th")["rung"], 2)
+        self.assertIn("[ขั้น 2/5", a.bubbles[-1][1].cget("text"))
+
+    def test_the_override_records_a_give_up_and_opens_the_last_rung(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        problem = a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp")
+        a.memory.add_attempt(problem, "int main(){}", verdict="WA")
+
+        reply = mentor.MentorReply("นี่คือเฉลย", 5,
+                                   {"slug": "knapsack-th", "title": "Knapsack",
+                                    "topic": "dp", "status": "working"}, [], None)
+        with patch("app.ask_mentor", return_value=reply):
+            a.mentor_turn("เปิดเฉลย")
+
+        row = a.memory.problem("knapsack-th")
+        self.assertEqual(row["status"], "given-up")
+        self.assertEqual(row["rung"], 5)
+
+    def test_failure_tags_are_stored_and_reach_the_profile(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        problem = a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp")
+        a.memory.add_attempt(problem, "int main(){}", verdict="WA")
+
+        reply = mentor.MentorReply("state ผิด", 1,
+                                   {"slug": "knapsack-th", "title": "Knapsack",
+                                    "topic": "dp", "status": "working"},
+                                   [{"tag": "wrong-state", "note": None}], None)
+        with patch("app.ask_mentor", return_value=reply):
+            a.mentor_turn("ลองแล้วไม่ผ่าน")
+
+        self.assertEqual(a.memory.profile("dp"), [("wrong-state", 1)])
+
+    def test_a_mentor_turn_never_produces_a_pc_proposal(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        reply = mentor.MentorReply("ลองอ่านโจทย์อีกที", 0, None, [], None)
+        with patch("app.ask_mentor", return_value=reply):
+            a.mentor_turn("เปิด spotify ให้หน่อย")
+        self.assertEqual(a.proposals, [])
+
+    def test_a_model_error_is_shown_and_does_not_break_the_window(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        with patch("app.ask_mentor", side_effect=mentor.MentorError("คำตอบว่าง")):
+            a.mentor_turn("ข้อนี้ทำไงดี")
+        self.assertIn("คำตอบว่าง", a.bubbles[-1][1].cget("text"))
+
+    def test_mentor_mode_survives_a_restart(self):
+        a = self.app
+        a.mentor_mode = True
+        a.store.save_settings(a.model, mentor=True)
+        a.close()
+        self.app = JarvisApp(store=LocalStore(Path(self.temp.name)))
+        self.app.withdraw()
+        self.assertTrue(self.app.mentor_mode)
+
+    def test_offer_note_warns_when_the_page_already_exists(self):
+        import mentor
+        a = self.app
+        a.study = Mock()
+        a.study.page.return_value = "---\nname: dp-intro\n---\n\nold content\n"
+        a.study.render.return_value = "---\nname: dp-intro\n---\n\nnew content\n"
+        note = {"slug": "dp-intro", "type": "concept", "tags": ["dp"], "lang": "th",
+                "body": "new content"}
+        with patch("app.messagebox.askyesno", return_value=False) as fake_ask:
+            a.offer_note(note)
+        message = fake_ask.call_args.args[1]
+        self.assertIn("This page already exists and will be replaced.", message)
+
+
 if __name__ == "__main__":
     unittest.main()

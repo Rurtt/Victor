@@ -93,8 +93,10 @@ class LocalStore:
         except (OSError, ValueError):
             return {}
 
-    def save_settings(self, model: str):
-        _write_atomic(self.settings_path, json.dumps({"model": model, "language": "th"}, ensure_ascii=False).encode("utf-8"))
+    def save_settings(self, model: str, mentor: bool = False):
+        _write_atomic(self.settings_path, json.dumps(
+            {"model": model, "language": "th", "mentor": bool(mentor)},
+            ensure_ascii=False).encode("utf-8"))
 
     def read_discord(self) -> dict:
         """{"auto": bool, "targets": {name: https://discord.com/channels/... link}}"""

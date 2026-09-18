@@ -20,6 +20,8 @@ from brain import MAX_INPUT, RETRYING, BrainError
 import engine
 from engine import DEFAULT_MODEL, ask, ask_screen
 import local_voice
+import mentor
+from engine import ask_mentor
 import screen
 import theme as T
 import tray as tray_ui
@@ -27,8 +29,10 @@ import voice
 from local_store import LocalStore, StorageError
 from memory import Memory, MemoryError
 from thai import tr
+from vault import Vault, VaultError
 
 BASE = Path(__file__).resolve().parent
+STUDY_VAULT = Path(r"D:\Jarvis\Study")
 MAX_SCREEN_STEPS = 25
 MAX_ROWS = 200
 PILL = {  # state: (text, text color, background)
@@ -104,6 +108,12 @@ class JarvisApp(ctk.CTk):
         # The database is the history; self.history is only the window we send upstream.
         self.memory = Memory(self.store.directory.parent)
         self.history = self.memory.recent_turns()
+        self.mentor_mode = self.store.read_settings().get("mentor") is True
+        try:
+            self.study = Vault(STUDY_VAULT)
+            self.study.catalogue()
+        except (VaultError, OSError):
+            self.study = None  # mentor mode still works, just without wiki context
         self.last_reply = ""
         self.events = queue.Queue()
         self.generation = 0
@@ -198,6 +208,12 @@ class JarvisApp(ctk.CTk):
         self.button(self.sidebar, "+  New conversation", self.new_chat, primary=True).pack(fill="x", padx=14, pady=(0, 10))
         for text, command in self.nav_items():
             self.button(self.sidebar, text, command, anchor="w").pack(fill="x", padx=14, pady=4)
+        self.mentor_switch = ctk.CTkSwitch(
+            self.sidebar, text=tr("Mentor mode (POSN)"),
+            command=self.toggle_mentor_mode)
+        self.mentor_switch.pack(anchor="w", padx=16, pady=(4, 0))
+        if self.mentor_mode:
+            self.mentor_switch.select()
         self.button(self.sidebar, "Open program folder", self.open_program_folder).pack(side="bottom", fill="x", padx=14, pady=16)
         self.label(self.sidebar, "Chat stays in memory. Sent messages go to your AI provider.", T.HINT, T.MUTED,
                    justify="left").pack(side="bottom", anchor="w", padx=18, pady=(0, 12))
@@ -355,6 +371,15 @@ class JarvisApp(ctk.CTk):
         self.compact = not self.compact
         self.apply_layout(width)
 
+    def toggle_mentor_mode(self):
+        self.mentor_mode = bool(self.mentor_switch.get())
+        if self.mentor_mode:
+            self.auto_speak.set(False)  # competitive programming is a typed activity
+        try:
+            self.store.save_settings(self.model, mentor=self.mentor_mode)
+        except StorageError as exc:
+            self.add_message("ERROR", str(exc))
+
     # ---------- status ----------
 
     def set_status(self, text, state="ready"):
@@ -505,7 +530,7 @@ class JarvisApp(ctk.CTk):
                     self.store.save_key(new_key)
                 elif not remember.get():
                     self.store.forget_key()
-                self.store.save_settings(new_model)
+                self.store.save_settings(new_model, mentor=self.mentor_mode)
             except (StorageError, OSError) as exc:
                 messagebox.showerror("บันทึกไม่ได้", str(exc), parent=win)
                 return
@@ -532,6 +557,69 @@ class JarvisApp(ctk.CTk):
         self.input.delete("1.0", "end")
         self.submit(text)
 
+    def mentor_turn(self, prompt: str):
+        """One coaching turn: gather in Python, ask once, clamp, then store."""
+        problem = self.memory.current_problem()
+        attempts = self.memory.attempts(problem["id"]) if problem else []
+        topic = (problem or {}).get("topic") or ""
+        profile = self.memory.profile(topic) if topic else []
+        tags = [tag for tag, _ in profile]
+        similar = self.memory.similar_problems(topic, tags) if topic else []
+        style_guide = self.study.style_guide() if self.study else ""
+        pages = self.study.select(topic, tags) if (self.study and topic) else []
+
+        override = mentor.is_override(prompt)
+        stored = (problem or {}).get("rung", 0)
+        has_attempt = bool(attempts)
+        has_verdict = any(a.get("verdict") for a in attempts)
+        ceiling = mentor.MAX_RUNG if override else mentor.allowed_rung(
+            stored, mentor.MAX_RUNG, has_attempt=has_attempt, has_verdict=has_verdict)
+
+        text = mentor.build_prompt(
+            allowed=ceiling, problem=problem, attempts=attempts, profile=profile,
+            similar=similar, style_guide=style_guide, pages=pages,
+            turns=self.history[-8:])
+
+        try:
+            reply = ask_mentor(self.model, text)
+        except (BrainError, mentor.MentorError) as exc:
+            self.add_message("ERROR", str(exc))
+            return
+
+        granted = mentor.MAX_RUNG if override else mentor.allowed_rung(
+            stored, reply.rung, has_attempt=has_attempt, has_verdict=has_verdict)
+
+        if reply.problem:
+            problem_id = self.memory.upsert_problem(
+                reply.problem["slug"], reply.problem["title"],
+                topic=reply.problem.get("topic"),
+                status="given-up" if override else reply.problem.get("status", "working"))
+            self.memory.set_rung(problem_id, granted)
+            if reply.failures and attempts:
+                self.memory.add_failures(attempts[-1]["id"], reply.failures)
+
+        shown = f"{mentor.label(granted)} {reply.text}"
+        self.remember("user", prompt)
+        self.remember("model", shown)
+        self.history = self.history[-16:]
+        self.add_message("JARVIS", shown)
+        if reply.note and self.study:
+            self.offer_note(reply.note)
+
+    def offer_note(self, note: dict):
+        """Ask before writing to the wiki, then write automatically and log it."""
+        preview = self.study.render(note)
+        message = f"{note['slug']} ({note['type']})\n\n{preview[:600]}"
+        if self.study.page(note["slug"]):
+            message = tr("This page already exists and will be replaced.") + "\n" + message
+        if not messagebox.askyesno(tr("Save to wiki?"), message, parent=self):
+            return
+        try:
+            written = self.study.save(note, note["body"][:120])
+            self.add_message("STATUS", tr("Saved to wiki: ") + str(written))
+        except (VaultError, OSError) as exc:
+            self.add_message("ERROR", tr("Could not save to wiki: ") + str(exc))
+
     def retry_reporter(self, kind, generation):
         return lambda n, total: self.events.put((kind, generation, (n, total)))
 
@@ -546,6 +634,12 @@ class JarvisApp(ctk.CTk):
         self.send_button.configure(state="disabled")
         self.set_status(self.thinking_status(), "thinking")
         self.add_message("YOU", display or prompt)
+        if self.mentor_mode:
+            self.busy = False
+            self.send_button.configure(state="normal")
+            self.mentor_turn(prompt)
+            self.set_status("Ready • Microphone off")
+            return
         history, key, model = list(self.history), self.key, self.model
         targets = list(self.discord["targets"])
         def work():
