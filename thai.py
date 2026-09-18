@@ -53,7 +53,7 @@ TEXT = {
     "Stopped • Microphone off": "หยุดแล้ว • ไมโครโฟนปิด",
     "A fresh conversation. What would you like to do?": "เริ่มแชตใหม่แล้ว วันนี้อยากให้ช่วยอะไร?",
     "Please review the proposed action below.": "ตรวจสอบรายการที่ Victor เสนอด้านล่างได้เลย",
-    "Stopped waiting for this reply. A request already sent to Google may still finish and incur usage.": "หยุดรอคำตอบแล้ว แต่คำขอที่ส่งให้ Google ไปแล้วอาจยังมีค่าใช้จ่าย",
+    "Stopped waiting for this reply. A request already sent may still finish and count toward usage.": "หยุดรอคำตอบแล้ว แต่คำขอที่ส่งไปแล้วอาจยังทำงานต่อและนับรวมในการใช้งาน",
     "In chat, you can also ask to open an HTTPS website, search the web,\nadjust media volume or save a new note. Web search opens your\nbrowser; Victor does not read those search results.": "สั่งผ่านแชตให้เปิดเว็บไซต์ ค้นหา ปรับเสียง หรือจดบันทึกได้\nการค้นหาแบบด่วนจะเปิดผลลัพธ์ในเบราว์เซอร์",
     "The API rejected the request. Check the model and API key.": "Gemini ปฏิเสธคำขอ ตรวจสอบชื่อโมเดลและ API key",
     "The API key was rejected.": "API key ไม่ถูกต้อง",

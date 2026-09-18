@@ -1,4 +1,5 @@
 """Desktop integration tests: real CustomTkinter widgets, mocked AI and PC side effects."""
+import threading
 import time
 import tkinter as tk
 import unittest
@@ -305,6 +306,110 @@ class MentorModeTests(unittest.TestCase):
         self.app.close()
         self.temp.cleanup()
 
+    def turn(self, prompt):
+        """Run one mentor turn to completion: worker, then the Tk-side poll."""
+        worker = self.app.mentor_turn(prompt)
+        if worker:
+            worker.join(5)
+        self.app.poll()
+
+    def test_the_model_call_runs_off_the_ui_thread(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp")
+        release, seen = threading.Event(), []
+        def fake_ask(model, text, cancelled=None):
+            seen.append(threading.current_thread())
+            release.wait(5)
+            return mentor.MentorReply("ลองอ่านโจทย์อีกที", 0, None, [], None)
+        with patch("app.ask_mentor", side_effect=fake_ask):
+            worker = a.submit("ข้อนี้ทำไงดี")
+            # submit returned while the model is still "thinking".
+            self.assertTrue(a.busy)
+            self.assertEqual(a.send_button.cget("state"), "disabled")
+            before = len(a.bubbles)
+            a.poll()
+            self.assertEqual(len(a.bubbles), before)  # no reply yet
+            release.set()
+            worker.join(5)
+            a.poll()
+        self.assertEqual(len(seen), 1)
+        self.assertIsNot(seen[0], threading.current_thread())
+        self.assertFalse(a.busy)
+        self.assertEqual(a.send_button.cget("state"), "normal")
+        self.assertIn("ลองอ่านโจทย์อีกที", a.bubbles[-1][1].cget("text"))
+
+    def test_stop_during_a_mentor_turn_drops_the_reply_and_records_nothing(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        problem = a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp")
+        a.memory.add_attempt(problem, "int main(){}", verdict="WA")  # would earn rung 1
+        reply = mentor.MentorReply("ลองคิดแบบ DP", 1,
+                                   {"slug": "knapsack-th", "title": "Knapsack",
+                                    "topic": "dp", "status": "working"}, [], None)
+        cancels = []
+        def fake_ask(model, text, cancelled=None):
+            cancels.append(cancelled)
+            return reply
+        with patch("app.ask_mentor", side_effect=fake_ask):
+            a.submit("ใบ้หน่อย").join(5)
+            self.assertFalse(a.events.empty())
+            a.stop()  # reply is queued but not yet polled
+            a.poll()
+        self.assertTrue(cancels[0]())  # the worker's cancel flag now reads True
+        self.assertEqual(a.memory.problem("knapsack-th")["rung"], 0)
+        texts = "\n".join(text.cget("text") for _row, text, _kind in a.bubbles)
+        self.assertNotIn("ลองคิดแบบ DP", texts)
+        self.assertFalse(a.busy)
+        self.assertEqual(a.send_button.cget("state"), "normal")
+        self.assertIn("ใบ้หน่อย", [t["text"] for t in a.history])  # user turn kept
+
+    def test_a_stopped_turn_cannot_land_on_the_next_one(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        problem = a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp")
+        a.memory.add_attempt(problem, "int main(){}", verdict="WA")  # earns rung 1
+        release, calls = threading.Event(), []
+        def fake_ask(model, text, cancelled=None):
+            calls.append(text)
+            if len(calls) == 1:  # turn A; B's prompt also quotes A via history
+                release.wait(5)
+                return mentor.MentorReply("คำตอบ A", 1, {"slug": "knapsack-th", "title": "Knapsack",
+                                                         "topic": "dp", "status": "working"}, [], None)
+            return mentor.MentorReply("คำตอบ B", 0, None, [], None)
+        with patch("app.ask_mentor", side_effect=fake_ask):
+            first = a.submit("คำถาม A")
+            a.stop()
+            second = a.submit("คำถาม B")
+            second.join(5)
+            release.set()
+            first.join(5)
+            a.poll()
+        texts = "\n".join(text.cget("text") for _row, text, _kind in a.bubbles)
+        self.assertIn("คำตอบ B", texts)
+        self.assertNotIn("คำตอบ A", texts)
+        self.assertEqual(a.memory.problem("knapsack-th")["rung"], 0)
+        self.assertFalse(a.busy)
+        self.assertEqual(a.send_button.cget("state"), "normal")
+
+    def test_a_read_error_before_the_call_restores_the_window(self):
+        import sqlite3
+        a = self.app
+        a.mentor_mode = True
+        with patch("app.ask_mentor") as fake_ask, \
+             patch.object(a.memory, "current_problem", side_effect=sqlite3.Error("อ่านไม่ได้")):
+            self.assertIsNone(a.submit("ข้อนี้ทำไงดี"))
+            a.poll()
+        fake_ask.assert_not_called()
+        self.assertEqual(a.bubbles[-1][2], "ERROR")
+        self.assertIn("อ่านไม่ได้", a.bubbles[-1][1].cget("text"))
+        self.assertFalse(a.busy)
+        self.assertEqual(a.send_button.cget("state"), "normal")
+        self.assertEqual(a.pill.cget("text"), app.PILL["ready"][0])
+
     def test_the_ladder_is_clamped_before_anything_is_shown(self):
         import mentor
         a = self.app
@@ -317,7 +422,7 @@ class MentorModeTests(unittest.TestCase):
                                    {"slug": "knapsack-th", "title": "Knapsack",
                                     "topic": "dp", "status": "working"}, [], None)
         with patch("app.ask_mentor", return_value=reply):
-            a.mentor_turn("ขอโค้ดเลย")
+            self.turn("ขอโค้ดเลย")
 
         self.assertEqual(a.memory.problem("knapsack-th")["rung"], 2)
         shown = a.bubbles[-1][1].cget("text")
@@ -340,7 +445,7 @@ class MentorModeTests(unittest.TestCase):
                                    {"slug": "knapsack-th", "title": "Knapsack",
                                     "topic": "dp", "status": "working"}, [], None)
         with patch("app.ask_mentor", return_value=reply):
-            a.mentor_turn("บอกเทคนิคหน่อย")
+            self.turn("บอกเทคนิคหน่อย")
 
         self.assertEqual(a.memory.problem("knapsack-th")["rung"], 0)
         shown = a.bubbles[-1][1].cget("text")
@@ -357,7 +462,7 @@ class MentorModeTests(unittest.TestCase):
         a.mentor_mode = True
         reply = mentor.MentorReply("นี่คือเฉลยเต็ม ๆ", 5, None, [], None)
         with patch("app.ask_mentor", return_value=reply):
-            a.mentor_turn("ขอเฉลยเลย")
+            self.turn("ขอเฉลยเลย")
 
         shown = a.bubbles[-1][1].cget("text")
         self.assertNotIn("นี่คือเฉลยเต็ม ๆ", shown)
@@ -375,7 +480,7 @@ class MentorModeTests(unittest.TestCase):
                                    {"slug": "knapsack-th", "title": "Knapsack",
                                     "topic": "dp", "status": "working"}, [], None)
         with patch("app.ask_mentor", return_value=reply):
-            a.mentor_turn("เปิดเฉลย")
+            self.turn("เปิดเฉลย")
 
         row = a.memory.problem("knapsack-th")
         self.assertEqual(row["status"], "given-up")
@@ -393,7 +498,7 @@ class MentorModeTests(unittest.TestCase):
                                     "topic": "dp", "status": "working"},
                                    [{"tag": "wrong-state", "note": None}], None)
         with patch("app.ask_mentor", return_value=reply):
-            a.mentor_turn("ลองแล้วไม่ผ่าน")
+            self.turn("ลองแล้วไม่ผ่าน")
 
         self.assertEqual(a.memory.profile("dp"), [("wrong-state", 1)])
 
@@ -403,7 +508,7 @@ class MentorModeTests(unittest.TestCase):
         a.mentor_mode = True
         reply = mentor.MentorReply("ลองอ่านโจทย์อีกที", 0, None, [], None)
         with patch("app.ask_mentor", return_value=reply):
-            a.mentor_turn("เปิด spotify ให้หน่อย")
+            self.turn("เปิด spotify ให้หน่อย")
         self.assertEqual(a.proposals, [])
 
     def test_a_model_error_is_shown_and_does_not_break_the_window(self):
@@ -411,7 +516,7 @@ class MentorModeTests(unittest.TestCase):
         a = self.app
         a.mentor_mode = True
         with patch("app.ask_mentor", side_effect=mentor.MentorError("คำตอบว่าง")):
-            a.mentor_turn("ข้อนี้ทำไงดี")
+            self.turn("ข้อนี้ทำไงดี")
         self.assertIn("คำตอบว่าง", a.bubbles[-1][1].cget("text"))
 
     def test_mentor_mode_survives_a_restart(self):
@@ -429,7 +534,7 @@ class MentorModeTests(unittest.TestCase):
         a.mentor_mode = True
         reply = mentor.MentorReply("ลองอ่านโจทย์อีกที", 0, None, [], None)
         with patch("app.ask_mentor", return_value=reply) as fake_ask:
-            a.mentor_turn("มีโจทย์ knapsack ต้องช่วยด้วย")
+            self.turn("มีโจทย์ knapsack ต้องช่วยด้วย")
         sent = fake_ask.call_args.args[1]
         self.assertIn("มีโจทย์ knapsack ต้องช่วยด้วย", sent)
 
@@ -445,7 +550,7 @@ class MentorModeTests(unittest.TestCase):
                                    {"slug": "new-th", "title": "New",
                                     "topic": "dp", "status": "working"}, [], None)
         with patch("app.ask_mentor", return_value=reply):
-            a.mentor_turn("เปลี่ยนโจทย์ ข้อนี้เลย")
+            self.turn("เปลี่ยนโจทย์ ข้อนี้เลย")
 
         self.assertEqual(a.memory.problem("new-th")["rung"], 0)
         self.assertEqual(a.memory.problem("old-th")["rung"], 3)
@@ -466,7 +571,7 @@ class MentorModeTests(unittest.TestCase):
 
         reply = mentor.MentorReply("นี่คือเฉลย", 5, None, [], None)
         with patch("app.ask_mentor", return_value=reply):
-            a.mentor_turn("เปิดเฉลย")
+            self.turn("เปิดเฉลย")
 
         row = a.memory.problem("knapsack-th")
         self.assertEqual(row["status"], "given-up")
@@ -484,7 +589,7 @@ class MentorModeTests(unittest.TestCase):
                                    {"slug": "knapsack-th", "title": "Knapsack",
                                     "topic": "dp", "status": "working"}, [], None)
         with patch("app.ask_mentor", return_value=reply):
-            a.mentor_turn("ลองใหม่อีกครั้ง")
+            self.turn("ลองใหม่อีกครั้ง")
 
         self.assertEqual(a.memory.problem("knapsack-th")["status"], "given-up")
 
@@ -499,7 +604,7 @@ class MentorModeTests(unittest.TestCase):
                                    {"slug": "knapsack-th", "title": "Knapsack",
                                     "topic": "dp", "status": "working"}, [], None)
         with patch("app.ask_mentor", return_value=reply):
-            a.mentor_turn("ส่งไปได้ WA ครับ")
+            self.turn("ส่งไปได้ WA ครับ")
 
         attempts = a.memory.attempts(problem)
         self.assertEqual(len(attempts), 2)
@@ -514,7 +619,7 @@ class MentorModeTests(unittest.TestCase):
                                     "topic": "dp", "status": "working"},
                                    [], None, attempt=True)
         with patch("app.ask_mentor", return_value=reply):
-            a.mentor_turn("นี่คือโค้ดของผม ได้ WA")
+            self.turn("นี่คือโค้ดของผม ได้ WA")
 
         row = a.memory.problem("new-th")
         attempts = a.memory.attempts(row["id"])
@@ -528,7 +633,7 @@ class MentorModeTests(unittest.TestCase):
         a.mentor_mode = True
         reply = mentor.MentorReply("ลองอ่านโจทย์อีกที", 0, None, [], None)
         with patch("app.ask_mentor", return_value=reply):
-            a.mentor_turn("สวัสดีครับ")
+            self.turn("สวัสดีครับ")
         self.assertEqual(a.bubbles[-1][1].cget("text"), "ลองอ่านโจทย์อีกที")
 
     def test_a_memory_error_during_recording_still_shows_a_reply(self):
@@ -543,7 +648,7 @@ class MentorModeTests(unittest.TestCase):
                                     "topic": "dp", "status": "working"}, [], None)
         with patch("app.ask_mentor", return_value=reply), \
              patch.object(a.memory, "set_rung", side_effect=MemErr("บันทึกไม่ได้")):
-            a.mentor_turn("ลองดูอีกที")
+            self.turn("ลองดูอีกที")
         kinds = [kind for _row, _text, kind in a.bubbles]
         self.assertIn("ERROR", kinds)
         # The rung was earned (attempt with a verdict on record), so this is an

@@ -63,10 +63,11 @@
   against mocks, as the chat path already is.
 - The study vault at `D:\Jarvis\Study` was created by hand; page writes against a
   real Obsidian vault have not been observed outside temporary directories.
-- Mentor turns run inline on the Tk thread (`mentor_turn` in `app.py`): the
-  window freezes for the length of the call and Stop cannot cancel it, unlike
-  the worker-thread chat path. Moving it onto that same machinery is the next
-  change, and should happen before this is used under time pressure.
+- Mentor turns now use the chat path's worker/generation machinery: only
+  `ask_mentor` runs off the Tk thread, and Stop both drops the queued reply
+  (no rung recorded) and makes `claude_brain._run` terminate the `claude -p`
+  child. Covered by mocked UI tests only; cancelling a real in-flight `claude`
+  process from mentor mode has not been observed.
 - The style-guide interview from spec §5.6 (Victor drafting the `style-guide`
   page from a first-session interview) was not built. Write that page in
   Obsidian by hand; without it mentor mode still works, just without an
