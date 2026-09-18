@@ -138,6 +138,29 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(decoded.note["slug"], "monotonic-deque")
         self.assertEqual(decoded.note["type"], "concept")
 
+    def test_an_attempt_flag_decodes(self):
+        decoded = mentor.decode(self.good(attempt=True))
+        self.assertTrue(decoded.attempt)
+
+    def test_the_attempt_flag_defaults_to_false(self):
+        decoded = mentor.decode(self.good())
+        self.assertFalse(decoded.attempt)
+
+
+class VerdictInTests(unittest.TestCase):
+    def test_a_verdict_word_is_read_from_the_users_text(self):
+        self.assertEqual(mentor.verdict_in("ส่งไปได้ WA ครับ"), "WA")
+        self.assertEqual(mentor.verdict_in("ผ่านแล้ว AC"), "AC")
+
+    def test_pasted_code_with_no_verdict_word_is_unsubmitted(self):
+        self.assertEqual(mentor.verdict_in("#include <bits/stdc++.h>\nint main(){}"), "unsubmitted")
+
+    def test_plain_reasoning_has_no_verdict(self):
+        self.assertIsNone(mentor.verdict_in("ผมว่าน่าจะใช้ dp นะ"))
+
+    def test_a_verdict_like_substring_inside_another_word_does_not_match(self):
+        self.assertIsNone(mentor.verdict_in("SWATTEAM ทำสำเร็จ"))
+
 
 class SystemPromptTests(unittest.TestCase):
     def test_the_prompt_states_the_rules_python_actually_enforces(self):

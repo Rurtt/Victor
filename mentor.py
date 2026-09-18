@@ -21,7 +21,7 @@ NOTE_FRAME = """บันทึกด้านล่างเป็นของ�
 ถ้าความเห็นของคุณต่างจากบันทึก ให้บอกตรง ๆ แล้วเสนอทางเลือกอื่นให้เขาเห็น
 อย่าเล่าสมมติฐานของเขากลับไปเฉย ๆ"""
 
-SYSTEM = f"""คุณคือโค้ชโจทย์ POSN ค่าย 2 (สอวน. คอมพิวเตอร์) ของผู้ใช้
+SYSTEM = f"""คุณคือโค้ชโจทย์ POSN ค่าย 2 ของผู้ใช้
 อธิบายเป็นภาษาไทย โค้ดและชื่อเทคนิคเป็น C++ กับภาษาอังกฤษตามเดิม
 
 คุณไม่สามารถเปิดไฟล์ ค้นเว็บ หรือสั่งงานคอมพิวเตอร์ได้ ข้อมูลทั้งหมดที่คุณมีอยู่ในพรอมต์นี้แล้ว
@@ -41,7 +41,7 @@ SYSTEM = f"""คุณคือโค้ชโจทย์ POSN ค่าย 2 (
 ถ้ายังไม่มีข้อมูลว่าเขามักพลาดเรื่องอะไร ให้บอกว่ายังไม่รู้ อย่าเดา
 
 ตอบเป็น JSON: reply คือข้อความ, rung คือขั้นที่ให้จริง
-ถ้ารู้โจทย์ใส่ problem, ถ้าเห็นข้อผิดพลาดใส่ failures
+ถ้ารู้โจทย์ใส่ problem, ถ้าเห็นข้อผิดพลาดใส่ failures, ถ้าข้อความนี้เป็นความพยายามของผู้ใช้ใส่ attempt
 ถ้าควรเก็บเข้า wiki ใส่ note ระบบจะถามผู้ใช้ก่อนบันทึก"""
 
 
@@ -77,6 +77,7 @@ MENTOR_SCHEMA = {
     "properties": {
         "reply": {"type": "string"},
         "rung": {"type": "integer", "minimum": 0, "maximum": MAX_RUNG},
+        "attempt": {"type": "boolean"},
         "problem": {"type": "object", "additionalProperties": False,
                     "required": ["slug", "title"], "properties": {
                         "slug": {"type": "string"},
@@ -107,6 +108,7 @@ class MentorReply(NamedTuple):
     problem: dict | None
     failures: list[dict]
     note: dict | None
+    attempt: bool = False
 
 
 def _pick(value, allowed, field):
@@ -168,8 +170,28 @@ def decode(data: dict) -> MentorReply:
                 "lang": _pick(note.get("lang"), LANGS, "lang"),
                 "body": body}
 
+    attempt = data.get("attempt") is True
+
     # Anything else the model sent — including an "actions" key — is dropped here.
-    return MentorReply(text, rung, problem, failures, note)
+    return MentorReply(text, rung, problem, failures, note, attempt)
+
+
+VERDICT_WORD = re.compile(r"\b(AC|WA|TLE|RE)\b")
+
+
+def verdict_in(text: str) -> str | None:
+    """A verdict read from the USER's own words, never from the model.
+
+    Keeps the rung-4 gate ("has_verdict") out of the model's hands: it is set only
+    by what the user actually typed, matching memory.VERDICTS.
+    """
+    text = text or ""
+    match = VERDICT_WORD.search(text)
+    if match:
+        return match.group(1)
+    if "#include" in text or "int main" in text:
+        return "unsubmitted"
+    return None
 
 
 BUDGET = {"style_guide": 1500, "profile": 800, "problem": 2500,

@@ -570,11 +570,18 @@ class JarvisApp(ctk.CTk):
 
         override = mentor.is_override(prompt)
         stored = (problem or {}).get("rung", 0)
-        has_attempt = bool(attempts)
-        has_verdict = any(a.get("verdict") for a in attempts)
+        # A verdict typed this turn (before the model has even replied) counts
+        # toward the pre-call ceiling; an attempt only the model would recognise
+        # ("attempt": true on the reply) cannot — that unlock lands next turn.
+        verdict = mentor.verdict_in(prompt)
+        has_attempt = bool(attempts) or verdict is not None
+        has_verdict = any(a.get("verdict") for a in attempts) or verdict is not None
         ceiling = mentor.MAX_RUNG if override else mentor.allowed_rung(
             stored, mentor.MAX_RUNG, has_attempt=has_attempt, has_verdict=has_verdict)
 
+        # Remembered before the call: the model needs to see this turn, and if the
+        # call below fails, the user's own message is not lost.
+        self.remember("user", prompt)
         text = mentor.build_prompt(
             allowed=ceiling, problem=problem, attempts=attempts, profile=profile,
             similar=similar, style_guide=style_guide, pages=pages,
@@ -586,35 +593,68 @@ class JarvisApp(ctk.CTk):
             self.add_message("ERROR", str(exc))
             return
 
-        granted = mentor.MAX_RUNG if override else mentor.allowed_rung(
-            stored, reply.rung, has_attempt=has_attempt, has_verdict=has_verdict)
-
-        if reply.problem:
-            problem_id = self.memory.upsert_problem(
-                reply.problem["slug"], reply.problem["title"],
-                topic=reply.problem.get("topic"),
-                status="given-up" if override else reply.problem.get("status", "working"))
-            self.memory.set_rung(problem_id, granted)
-            if reply.failures and attempts:
-                self.memory.add_failures(attempts[-1]["id"], reply.failures)
-
-        shown = f"{mentor.label(granted)} {reply.text}"
-        self.remember("user", prompt)
+        target_id, granted = self.record_mentor_reply(prompt, problem, reply, override, verdict)
+        shown = f"{mentor.label(granted)} {reply.text}" if target_id else reply.text
         self.remember("model", shown)
         self.history = self.history[-16:]
         self.add_message("JARVIS", shown)
         if reply.note and self.study:
             self.offer_note(reply.note)
 
+    def record_mentor_reply(self, prompt, problem, reply, override, verdict):
+        """Attribute this turn's rung to the problem the reply is actually about.
+
+        The reply may name a different (or brand new) problem than the one the
+        ladder was clamped against before the call — that problem's own rung and
+        attempts are what govern what it is allowed to receive, never the one the
+        conversation happened to be on. Returns (target_id, granted); target_id is
+        None when there is no problem to record anything against.
+        """
+        target = self.memory.problem(reply.problem["slug"]) if reply.problem else problem
+        target_id = target["id"] if target else None
+        target_stored = target["rung"] if target else 0
+        target_attempts = self.memory.attempts(target_id) if target_id else []
+        granted = target_stored  # fallback if a write below fails before this is recomputed
+
+        try:
+            if target_id and not override and (reply.attempt or verdict):
+                self.memory.add_attempt(target_id, prompt, verdict=verdict)
+                target_attempts = self.memory.attempts(target_id)
+
+            has_attempt = bool(target_attempts)
+            has_verdict = any(a.get("verdict") for a in target_attempts)
+            granted = mentor.MAX_RUNG if override else mentor.allowed_rung(
+                target_stored, reply.rung, has_attempt=has_attempt, has_verdict=has_verdict)
+
+            if reply.problem:
+                problem_id = self.memory.upsert_problem(
+                    reply.problem["slug"], reply.problem["title"],
+                    topic=reply.problem.get("topic"),
+                    status="given-up" if override else reply.problem.get("status", "working"))
+                self.memory.set_rung(problem_id, granted)
+                if reply.failures and target_attempts:
+                    self.memory.add_failures(target_attempts[-1]["id"], reply.failures)
+            elif override and problem:
+                # The model gave up without restating the problem; the user's
+                # "เปิดเฉลย" still has to land somewhere.
+                self.memory.upsert_problem(problem["slug"], problem["title"],
+                                           topic=problem.get("topic"), status="given-up")
+                self.memory.set_rung(problem["id"], mentor.MAX_RUNG)
+            elif target_id:
+                self.memory.set_rung(target_id, granted)
+        except (MemoryError, sqlite3.Error) as exc:
+            self.add_message("ERROR", str(exc))
+        return target_id, granted
+
     def offer_note(self, note: dict):
         """Ask before writing to the wiki, then write automatically and log it."""
-        preview = self.study.render(note)
-        message = f"{note['slug']} ({note['type']})\n\n{preview[:600]}"
-        if self.study.page(note["slug"]):
-            message = tr("This page already exists and will be replaced.") + "\n" + message
-        if not messagebox.askyesno(tr("Save to wiki?"), message, parent=self):
-            return
         try:
+            preview = self.study.render(note)
+            message = f"{note['slug']} ({note['type']})\n\n{preview[:600]}"
+            if self.study.page(note["slug"]):
+                message = tr("This page already exists and will be replaced.") + "\n" + message
+            if not messagebox.askyesno(tr("Save to wiki?"), message, parent=self):
+                return
             written = self.study.save(note, note["body"][:120])
             self.add_message("STATUS", tr("Saved to wiki: ") + str(written))
         except (VaultError, OSError) as exc:
@@ -634,7 +674,7 @@ class JarvisApp(ctk.CTk):
         self.send_button.configure(state="disabled")
         self.set_status(self.thinking_status(), "thinking")
         self.add_message("YOU", display or prompt)
-        if self.mentor_mode:
+        if self.mentor_mode and not summary:
             self.busy = False
             self.send_button.configure(state="normal")
             self.mentor_turn(prompt)

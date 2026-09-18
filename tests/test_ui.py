@@ -380,6 +380,90 @@ class MentorModeTests(unittest.TestCase):
         self.app.withdraw()
         self.assertTrue(self.app.mentor_mode)
 
+    def test_the_current_message_reaches_the_model(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        reply = mentor.MentorReply("ลองอ่านโจทย์อีกที", 0, None, [], None)
+        with patch("app.ask_mentor", return_value=reply) as fake_ask:
+            a.mentor_turn("มีโจทย์ knapsack ต้องช่วยด้วย")
+        sent = fake_ask.call_args.args[1]
+        self.assertIn("มีโจทย์ knapsack ต้องช่วยด้วย", sent)
+
+    def test_a_cross_slug_reply_cannot_exceed_the_new_problems_gates(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        old = a.memory.upsert_problem("old-th", "Old", topic="dp")
+        a.memory.set_rung(old, 3)
+        a.memory.add_attempt(old, "int main(){}", verdict="WA")
+
+        reply = mentor.MentorReply("นี่คือโจทย์ใหม่ เฉลยเลย", 5,
+                                   {"slug": "new-th", "title": "New",
+                                    "topic": "dp", "status": "working"}, [], None)
+        with patch("app.ask_mentor", return_value=reply):
+            a.mentor_turn("เปลี่ยนโจทย์ ข้อนี้เลย")
+
+        self.assertEqual(a.memory.problem("new-th")["rung"], 0)
+        self.assertEqual(a.memory.problem("old-th")["rung"], 3)
+
+    def test_a_no_slug_override_records_a_give_up_on_the_current_problem(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        problem = a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp")
+        a.memory.add_attempt(problem, "int main(){}", verdict="WA")
+
+        reply = mentor.MentorReply("นี่คือเฉลย", 5, None, [], None)
+        with patch("app.ask_mentor", return_value=reply):
+            a.mentor_turn("เปิดเฉลย")
+
+        row = a.memory.problem("knapsack-th")
+        self.assertEqual(row["status"], "given-up")
+        self.assertEqual(row["rung"], 5)
+
+    def test_an_attempt_with_a_typed_verdict_is_recorded(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        problem = a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp")
+        a.memory.add_attempt(problem, "แนวคิด: ลองทุกกรณี")  # no verdict yet
+
+        reply = mentor.MentorReply("โอเค ลองดูจุดนี้", 1,
+                                   {"slug": "knapsack-th", "title": "Knapsack",
+                                    "topic": "dp", "status": "working"}, [], None)
+        with patch("app.ask_mentor", return_value=reply):
+            a.mentor_turn("ส่งไปได้ WA ครับ")
+
+        attempts = a.memory.attempts(problem)
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual(attempts[-1]["verdict"], "WA")
+
+    def test_a_turn_with_no_problem_has_no_rung_prefix(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        reply = mentor.MentorReply("ลองอ่านโจทย์อีกที", 0, None, [], None)
+        with patch("app.ask_mentor", return_value=reply):
+            a.mentor_turn("สวัสดีครับ")
+        self.assertEqual(a.bubbles[-1][1].cget("text"), "ลองอ่านโจทย์อีกที")
+
+    def test_a_memory_error_during_recording_still_shows_the_reply(self):
+        import mentor
+        from memory import MemoryError as MemErr
+        a = self.app
+        a.mentor_mode = True
+        a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp")
+        reply = mentor.MentorReply("นี่คือคำตอบ", 1,
+                                   {"slug": "knapsack-th", "title": "Knapsack",
+                                    "topic": "dp", "status": "working"}, [], None)
+        with patch("app.ask_mentor", return_value=reply), \
+             patch.object(a.memory, "set_rung", side_effect=MemErr("บันทึกไม่ได้")):
+            a.mentor_turn("ลองดูอีกที")
+        kinds = [kind for _row, _text, kind in a.bubbles]
+        self.assertIn("ERROR", kinds)
+        self.assertIn("นี่คือคำตอบ", a.bubbles[-1][1].cget("text"))
+
     def test_offer_note_warns_when_the_page_already_exists(self):
         import mentor
         a = self.app
