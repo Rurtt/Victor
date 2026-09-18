@@ -1163,7 +1163,7 @@ class VictorApp(ctk.CTk):
         self.discard_proposals()
         self.set_status("Stopped • Microphone off", "stopped")
         if was_busy:
-            self.add_message("STATUS", "Stopped waiting for this reply. A request already sent to Google may still finish and incur usage.")
+            self.add_message("STATUS", "Stopped waiting for this reply. A request already sent may still finish and count toward usage.")
 
     def new_chat(self):
         self.stop()

@@ -366,6 +366,50 @@ class MentorModeTests(unittest.TestCase):
         self.assertEqual(a.send_button.cget("state"), "normal")
         self.assertIn("ใบ้หน่อย", [t["text"] for t in a.history])  # user turn kept
 
+    def test_a_stopped_turn_cannot_land_on_the_next_one(self):
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        problem = a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp")
+        a.memory.add_attempt(problem, "int main(){}", verdict="WA")  # earns rung 1
+        release, calls = threading.Event(), []
+        def fake_ask(model, text, cancelled=None):
+            calls.append(text)
+            if len(calls) == 1:  # turn A; B's prompt also quotes A via history
+                release.wait(5)
+                return mentor.MentorReply("คำตอบ A", 1, {"slug": "knapsack-th", "title": "Knapsack",
+                                                         "topic": "dp", "status": "working"}, [], None)
+            return mentor.MentorReply("คำตอบ B", 0, None, [], None)
+        with patch("app.ask_mentor", side_effect=fake_ask):
+            first = a.submit("คำถาม A")
+            a.stop()
+            second = a.submit("คำถาม B")
+            second.join(5)
+            release.set()
+            first.join(5)
+            a.poll()
+        texts = "\n".join(text.cget("text") for _row, text, _kind in a.bubbles)
+        self.assertIn("คำตอบ B", texts)
+        self.assertNotIn("คำตอบ A", texts)
+        self.assertEqual(a.memory.problem("knapsack-th")["rung"], 0)
+        self.assertFalse(a.busy)
+        self.assertEqual(a.send_button.cget("state"), "normal")
+
+    def test_a_read_error_before_the_call_restores_the_window(self):
+        import sqlite3
+        a = self.app
+        a.mentor_mode = True
+        with patch("app.ask_mentor") as fake_ask, \
+             patch.object(a.memory, "current_problem", side_effect=sqlite3.Error("อ่านไม่ได้")):
+            self.assertIsNone(a.submit("ข้อนี้ทำไงดี"))
+            a.poll()
+        fake_ask.assert_not_called()
+        self.assertEqual(a.bubbles[-1][2], "ERROR")
+        self.assertIn("อ่านไม่ได้", a.bubbles[-1][1].cget("text"))
+        self.assertFalse(a.busy)
+        self.assertEqual(a.send_button.cget("state"), "normal")
+        self.assertEqual(a.pill.cget("text"), app.PILL["ready"][0])
+
     def test_the_ladder_is_clamped_before_anything_is_shown(self):
         import mentor
         a = self.app
