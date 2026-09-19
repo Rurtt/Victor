@@ -355,13 +355,14 @@ Run from this folder:
 python -m unittest discover -s tests -v
 ```
 
-164 tests. They check fake approval flags, prohibited commands, URL validation,
+248 tests. They check fake approval flags, prohibited commands, URL validation,
 single-use approvals, cancellation, note containment, summary action rejection,
 HTTP credential handling, late responses, speech cancellation, provider routing
 by model ID, the refusal to send audio to the cloud in Claude mode, the tray
 message loop and instance guard, the hands-free wake-word turn, real Tk UI
 flows with simulated AI results and mocked PC effects, the mentor hint ladder
-and wiki-note flow, and conversation history persisting in `data/jarvis.db`.
+and wiki-note flow, the daily problem bank, grader and difficulty ramp, and
+conversation history persisting in `data/jarvis.db`.
 
 Not covered by the suite: a live Claude or Gemini reply, a real microphone
 capture, audible playback, an actual run of `scripts\install-voice.ps1`, and a
