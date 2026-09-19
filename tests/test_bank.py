@@ -107,3 +107,9 @@ class CommittedBankTests(unittest.TestCase):
         self.assertGreaterEqual(len({e.topic for e in entries}), 4)
         for entry in entries:
             self.assertGreaterEqual(len(entry.tests), 10, entry.id)
+
+    def test_archive_covers_every_camp2_level(self):
+        entries = [e for e in bank.load(ROOT / "problems") if e.url is not None]
+        self.assertGreaterEqual(len(entries), 30)
+        for level in (3, 4, 5):
+            self.assertGreaterEqual(len([e for e in entries if e.level == level]), 8, level)
