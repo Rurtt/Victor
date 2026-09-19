@@ -14,6 +14,24 @@ from local_store import LocalStore
 from thai import tr
 
 
+class BankLoadErrorTests(unittest.TestCase):
+    def test_an_unreadable_bank_leaves_an_empty_bank_with_a_notice(self):
+        temp = tempfile.TemporaryDirectory()
+        try:
+            with patch("app.bank.load", side_effect=OSError("disk unreadable")):
+                broken = VictorApp(store=LocalStore(Path(temp.name)))
+            try:
+                broken.withdraw()
+                self.assertEqual(broken.bank, [])
+                # __init__ calls refresh_today(), which drains daily_notices into a message.
+                shown = "\n".join(text.cget("text") for _row, text, _kind in broken.bubbles)
+                self.assertIn("disk unreadable", shown)
+            finally:
+                broken.close()
+        finally:
+            temp.cleanup()
+
+
 class DesktopFlowTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -579,6 +597,22 @@ class MentorModeTests(unittest.TestCase):
         self.assertEqual(row["status"], "given-up")
         self.assertEqual(row["rung"], 5)
 
+    def test_the_model_cannot_declare_a_give_up_without_an_override(self):
+        """Only the user's เปิดเฉลย (or an already given-up problem) may store
+        status "given-up" — the model proposing it on its own must not stick."""
+        import mentor
+        a = self.app
+        a.mentor_mode = True
+        a.memory.upsert_problem("knapsack-th", "Knapsack", topic="dp")
+
+        reply = mentor.MentorReply("ยอมแพ้ข้อนี้กันเถอะ", 1,
+                                   {"slug": "knapsack-th", "title": "Knapsack",
+                                    "topic": "dp", "status": "given-up"}, [], None)
+        with patch("app.ask_mentor", return_value=reply):
+            self.turn("ลองอีกที")
+
+        self.assertNotEqual(a.memory.problem("knapsack-th")["status"], "given-up")
+
     def test_a_given_up_problem_stays_given_up_when_the_model_says_working(self):
         import mentor
         a = self.app
@@ -765,6 +799,50 @@ class DailyCardTests(unittest.TestCase):
         current = self.app.memory.current_problem()
         self.assertIsNotNone(current)
         self.assertEqual(current["id"], main_id)
+
+    def test_start_grade_refuses_to_start_while_busy(self):
+        import grader
+        release = threading.Event()
+        def slow(*args, **kwargs):
+            release.wait(5)
+            return grader.Result("AC", 1, 1, "AC 1/1")
+        with patch("app.grader.grade", side_effect=slow) as fake_grade:
+            worker = self.app.start_grade("main")
+            second = self.app.start_grade("warmup")
+            self.assertIsNone(second)
+            release.set()
+            worker.join(5)
+            self.app.poll()
+        self.assertEqual(fake_grade.call_count, 1)
+
+    def test_start_grade_worker_reports_unexpected_errors(self):
+        with patch("app.grader.grade", side_effect=RuntimeError("boom")):
+            worker = self.app.start_grade("main")
+            worker.join(5)
+            self.app.poll()
+        self.assertFalse(self.app.busy)
+        shown = "\n".join(text.cget("text") for _row, text, _kind in self.app.bubbles)
+        self.assertIn("An unexpected grading error occurred.", shown)
+
+    def test_a_typed_ac_solves_todays_main_and_refreshes_the_card(self):
+        """Spec 5: a typed verdict of AC is Python's call, not the model's — it
+        freezes the rung, marks the problem solved, and the Today card must
+        show it without a manual refresh."""
+        import mentor
+        import customtkinter as ctk
+        self.app.mentor_mode = True
+        main_id = self.today_rows()["main"]["problem_id"]
+        reply = mentor.MentorReply("เก่งมาก ผ่านแล้ว", 0, None, [], None)
+        with patch("app.ask_mentor", return_value=reply):
+            worker = self.app.mentor_turn("AC ครับ")
+            worker.join(5)
+            self.app.poll()
+        row = self.today_rows()["main"]
+        self.assertEqual(row["problem_id"], main_id)
+        self.assertEqual(row["status"], "solved")
+        texts = " ".join(w.cget("text") for w in self.app.today_card.winfo_children()
+                         if isinstance(w, ctk.CTkLabel))
+        self.assertIn("AC", texts)
 
     def test_stop_during_grading_records_nothing(self):
         import grader

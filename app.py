@@ -128,7 +128,7 @@ class VictorApp(ctk.CTk):
         self.daily_notices = []
         try:
             self.bank = bank.load(BANK)
-        except bank.BankError as exc:
+        except (bank.BankError, OSError) as exc:
             self.bank = []
             self.daily_notices.append(str(exc))
         self.bank_by_id = {e.id: e for e in self.bank}
@@ -137,6 +137,7 @@ class VictorApp(ctk.CTk):
         self.events = queue.Queue()
         self.generation = 0
         self.busy = False
+        self._grade_thread = None
         self.listening = False
         self.speech_generation = 0
         self.recorder = voice.Recorder()
@@ -636,6 +637,9 @@ class VictorApp(ctk.CTk):
         """The post-call half of mentor_turn, on the Tk thread: record, withhold, show."""
         problem, override, verdict, ceiling = context
         target_id, granted = self.record_mentor_reply(prompt, problem, reply, override, verdict)
+        # Recorded before anything is shown: an AC or give-up from this turn
+        # must reach the Today card even if the reply below is withheld.
+        self.refresh_today()
         # With no problem to attribute the reply to (no current problem, model
         # named none, or a DB error left target_id unset), fall back to the
         # pre-call ceiling instead of trusting an unrecorded "granted".
@@ -678,14 +682,28 @@ class VictorApp(ctk.CTk):
                 # A give-up is the enforcement record (spec 5.4): the model
                 # cannot revive a given-up problem by proposing "working" again.
                 sticky_given_up = target is not None and target.get("status") == "given-up"
+                # The model may propose "given-up" on its own, but only the
+                # user's เปิดเฉลย (override) or an already given-up problem
+                # may actually store it (spec 5.4).
+                proposed = reply.problem.get("status", "working")
                 status = ("given-up" if (override or sticky_given_up)
-                          else reply.problem.get("status", "working"))
+                          else ("working" if proposed == "given-up" else proposed))
                 target_id = self.memory.upsert_problem(
                     reply.problem["slug"], reply.problem["title"],
                     topic=reply.problem.get("topic"), status=status)
             else:
                 target_id = problem["id"] if problem else None
                 target_stored = problem["rung"] if problem else 0
+                status = problem.get("status") if problem else None
+
+            # Python decides "solved", never the model: a typed AC verdict
+            # freezes the rung and moves current_problem on (spec 5), unless
+            # the problem is already given up.
+            if target_id and verdict == "AC" and status != "given-up":
+                slug = reply.problem["slug"] if reply.problem else problem["slug"]
+                title = reply.problem["title"] if reply.problem else problem["title"]
+                topic = reply.problem.get("topic") if reply.problem else problem.get("topic")
+                self.memory.upsert_problem(slug, title, topic=topic, status="solved")
 
             granted = target_stored  # fallback if a later write fails before this is recomputed
             target_attempts = self.memory.attempts(target_id) if target_id else []
@@ -781,6 +799,8 @@ class VictorApp(ctk.CTk):
 
     def start_grade(self, role, day=None):
         """Grade one daily solution off the Tk thread. Returns the worker (for tests)."""
+        if self.busy or (self._grade_thread and self._grade_thread.is_alive()):
+            return None
         day = day or date.today()
         rows = {r["role"]: r for r in self.memory.daily_rows(day.isoformat())}
         row = rows.get(role)
@@ -805,7 +825,10 @@ class VictorApp(ctk.CTk):
                 self.events.put(("grade", generation, (row, entry, folder, result)))
             except (grader.GraderError, OSError) as exc:
                 self.events.put(("error", generation, str(exc)))
+            except Exception:
+                self.events.put(("error", generation, "An unexpected grading error occurred."))
         thread = threading.Thread(target=work, daemon=True)
+        self._grade_thread = thread
         thread.start()
         return thread
 
