@@ -298,9 +298,7 @@ class PersistentHistoryTests(unittest.TestCase):
 class MentorModeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        # An empty bank: these tests are about mentor conversation, not the daily
-        # problems feature, and a real daily "main" problem would otherwise become
-        # the current_problem() every test starts with, breaking the no-problem cases.
+        # An empty bank isolates these tests from the daily serve, keeping "no current problem" reachable.
         with patch("app.bank.load", return_value=[]):
             self.app = VictorApp(store=LocalStore(Path(self.temp.name)))
         self.app.withdraw()
@@ -750,6 +748,23 @@ class DailyCardTests(unittest.TestCase):
             self.app.poll()
         ask.assert_not_called()
         self.assertTrue(self.today_rows()["main"]["ac"])
+
+    def test_a_general_mentor_message_attaches_to_todays_main_problem(self):
+        """Spec 6 step 5: with a populated bank, a general mentor message (no
+        verdict, no ตรวจ) attaches to today's main problem, not a blank slate."""
+        import mentor
+        self.app.mentor_mode = True
+        main_id = self.today_rows()["main"]["problem_id"]
+        reply = mentor.MentorReply("ลองเล่าว่าอ่านโจทย์ว่าอย่างไร", 0, None, [], None)
+        with patch("app.ask_mentor", return_value=reply):
+            worker = self.app.mentor_turn("สวัสดีครับ")
+            worker.join(5)
+            self.app.poll()
+        shown = self.app.bubbles[-1][1].cget("text")
+        self.assertIn(mentor.label(0), shown)
+        current = self.app.memory.current_problem()
+        self.assertIsNotNone(current)
+        self.assertEqual(current["id"], main_id)
 
     def test_stop_during_grading_records_nothing(self):
         import grader
