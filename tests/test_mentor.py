@@ -236,6 +236,54 @@ class BudgetTests(unittest.TestCase):
         self.assertIn("ยังไม่มีข้อมูล", prompt)
 
 
+class ContextFileTests(unittest.TestCase):
+    def base(self, files):
+        return mentor.build_prompt(allowed=0, problem=None, attempts=[], profile=[],
+                                   similar=[], style_guide="", pages=[], turns=[],
+                                   files=files)
+
+    def test_attached_code_reaches_the_model_verbatim_and_framed_as_data(self):
+        code = "#include <bits/stdc++.h>\nint main() { return 0; }"
+        prompt = self.base([("sol.cpp (main)", code)])
+        self.assertIn(code, prompt)
+        self.assertIn("sol.cpp (main)", prompt)
+        self.assertIn(mentor.FILE_FRAME, prompt)
+
+    def test_no_files_means_no_file_frame(self):
+        self.assertNotIn(mentor.FILE_FRAME, self.base([]))
+
+    def test_oversized_code_keeps_head_and_tail(self):
+        code = "HEAD" + "x" * 50_000 + "TAIL"
+        prompt = self.base([("sol.cpp", code)])
+        self.assertIn("HEAD", prompt)
+        self.assertIn("TAIL", prompt)
+        self.assertLess(len(prompt), mentor.BUDGET["code"] + 2000)
+
+    def test_a_statement_gets_its_own_smaller_budget(self):
+        prompt = self.base([("statement.md", "s" * 50_000)])
+        self.assertLess(prompt.count("s"), mentor.BUDGET["statement"] + 500)
+
+    def test_read_context_file_accepts_source_and_refuses_the_rest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            good = Path(tmp) / "a.cpp"
+            good.write_text("int main(){}", encoding="utf-8")
+            self.assertEqual(mentor.read_context_file(good), "int main(){}")
+            exe = Path(tmp) / "a.exe"
+            exe.write_bytes(bytes([77, 90, 0, 0]))
+            with self.assertRaises(mentor.MentorError):
+                mentor.read_context_file(exe)
+            binary = Path(tmp) / "b.txt"
+            binary.write_bytes(b"abc" + bytes([0]) + b"def")
+            with self.assertRaises(mentor.MentorError):
+                mentor.read_context_file(binary)
+            big = Path(tmp) / "big.txt"
+            big.write_text("x" * (mentor.MAX_FILE + 1), encoding="utf-8")
+            with self.assertRaises(mentor.MentorError):
+                mentor.read_context_file(big)
+            with self.assertRaises(mentor.MentorError):
+                mentor.read_context_file(Path(tmp) / "missing.cpp")
+
+
 class RoutingTests(unittest.TestCase):
     def test_a_mentor_turn_asks_for_the_mentor_schema_and_higher_effort(self):
         import claude_brain

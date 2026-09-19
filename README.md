@@ -219,6 +219,23 @@ undone by one. The sixteen-message cap mentioned below under Access and data
 handling still governs only what is sent to the model each turn, not what is
 kept.
 
+### What Victor sees of your files
+
+Victor never opens files itself (`claude -p` runs with no tools). Instead, every
+mentor turn re-reads from disk and sends:
+
+- **Today's problem**, when the conversation is on a daily problem: that day's
+  `statement.md` (up to 3,000 characters) and your current `sol.cpp` (up to
+  6,000). Save in your editor and the next message sees the new version. You
+  don't need to press Grade first.
+- **A pinned file**: press 📎 next to Send and pick any `.cpp .cc .c .h .hpp
+  .py .md .txt .in .out` file of 200 KB or less. It stays attached, re-read
+  every turn, until you click its chip under the composer or start a new chat.
+
+Long files keep their beginning and end; the middle is cut. File contents are
+framed as data, not instructions. Showing code does **not** count as an
+attempt and does not unlock a rung. Only what you type does.
+
 ## Daily practice
 
 With Mentor mode on, the sidebar's **TODAY** card serves two POSN-style problems a
