@@ -85,3 +85,78 @@
 
 The Windows speech engine denied synthesis inside the tool sandbox, then passed
 in the ordinary user environment. Use the supplied launcher from your desktop.
+
+# Verification — 2026-09-19 (daily practice, grader, ramp)
+
+The GUI was not launched for this check: a live Victor may have been running on this
+PC, and a real launch of `Start Victor.cmd` writes today's set into `D:\Jarvis\Study`.
+Instead the real problem bank and real grader were driven end to end from a script
+against a temporary data directory, with no repo or `D:\Jarvis\Study` files touched.
+
+## Scripted check (actual, not mocked)
+
+Ran with the real `bank.py`, `daily.py`, `grader.py` and `memory.Memory`, a temporary
+`tempfile.mkdtemp()` directory standing in for the app's data folder, and today's date
+(2026-09-19):
+
+1. `bank.load(problems/)` loaded **55 bank entries** with no `BankError`.
+2. `daily.ensure_today(m, entries, tmp/daily, today)` on a fresh `Memory` returned
+   `[]` (no ramp-change notice — day 1, level 1) and served:
+   - warm-up: `camp1/traffic-light-query` (level 1)
+   - main: `camp1/caesar-shift-decoder` (level 1)
+
+   `tmp/daily/2026-09-19/warmup/statement.md` and `.../main/` both existed with a
+   `sol.cpp` template, matching spec §6 step 4.
+3. Read the warm-up's real `statement.md` (a traffic-light color query problem) and
+   wrote an actual correct C++ solution (mod-arithmetic on `t mod (R+G+Y)`) into
+   `warmup/sol.cpp`. `grader.grade(...)` compiled it with the fallback
+   `C:\msys64\ucrt64\bin\g++.exe` and ran all 20 tests:
+   **verdict `AC`, detail `AC 20/20`.**
+4. Overwrote `warmup/sol.cpp` with a deliberately wrong solution (always prints
+   `Red`). Re-graded: **verdict `WA`**, detail:
+   ```
+   WA on test 1/20
+   input:
+   4 4 1 3
+   25
+   19
+   30
+   ```
+   Confirms the failing input is shown for a warm-up (spec §7 "Stop at the first
+   failure").
+5. Called `daily.ensure_today(...)` again on the same `Memory`/date: returned `[]`
+   and `m.daily_rows("2026-09-19")` was byte-for-byte equal to the first call's rows
+   — confirms idempotency (spec §6 step 1).
+
+**Verdicts: AC confirmed, WA confirmed (input shown, warm-up), idempotent confirmed.**
+`ตรวจ`/mentor-mode grading and the Today card itself were not exercised here since
+those are UI-level (`app.py`); the grading call they both delegate to (`grader.grade`)
+is the same one exercised above.
+
+## Full test suite
+
+```
+python -m unittest discover -s tests
+```
+
+**239 tests, OK** (0 failures, 0 errors). No live Victor process held the tray's
+instance-guard mutex during this run, so `tests.test_tray` ran clean; when a live
+Victor is running, `InstanceGuardTests` in that module is expected to fail on the
+mutex-contention case only (environmental, not a regression).
+
+## Pending — run by the user
+
+The brief's six-step live GUI walkthrough was not performed, per the controller
+ruling above (risk of a live Victor writing into `D:\Jarvis\Study`). Still to do,
+by the user, from the desktop:
+
+1. Run `Start Victor.cmd`. Confirm the sidebar shows TODAY with a warm-up and a
+   main problem.
+2. Confirm `D:\Jarvis\Study\daily\<today>\main\statement.md` and `sol.cpp` exist
+   (Open button).
+3. Write a correct solution for the warm-up in `sol.cpp`, press Grade → `AC n/n`,
+   card shows AC.
+4. Break it (print 0), press Grade → `WA on test k/n` plus the input (warm-up
+   only).
+5. Turn on mentor mode, type `ตรวจ` → grades the current problem, no Claude call.
+6. Close and reopen Victor → no new problems served today, card unchanged.
