@@ -43,10 +43,10 @@ For each scenario, output a single line containing the total number of candles b
 1
 ```
 
-**Explanation for the first case:** Start with 5 candles and 0 stubs.
-- Burn 5 candles → 5 stubs. Melt 4 of them into 1 new candle (1 stub left over). Total burned so far: 5.
-- Burn that 1 new candle → 2 stubs total. Melt 2 into 1 new candle (0 left over). Total burned: 6.
-- Burn that candle → 1 stub. Not enough to melt (need 2). Total burned: 7.
+**Explanation for the first case:** Start with 5 candles and 0 stubs, $K=2$.
+- Burn the 5 starting candles → total burned = 5, stubs = 5. Melt stubs into new candles as long as at least $K=2$ are available: 5 stubs make 2 new candles, leaving 1 stub over.
+- Burn those 2 new candles → total burned = 7, stubs = 1 (leftover) + 2 (just produced) = 3. Melt: 3 stubs make 1 new candle, leaving 1 stub over.
+- Burn that candle → total burned = 8, stubs = 1 (leftover) + 1 (just produced) = 2. Melt: 2 stubs make 1 new candle, leaving 0 stubs over.
+- Burn that candle → total burned = 9, stubs = 0 + 1 = 1. Now only 1 stub remains (fewer than $K=2$) and there are no candles left to burn, so the process stops.
 
-Wait — let's redo carefully with $K=2$: stubs accumulate one at a time and are melted as soon as 2 are available, so:
-5 burned → 5 stubs → melt into 2 new candles (1 stub left, 2 candles produced) → burn 2 → total 7, stubs = 1+2 = 3 → melt into 1 candle (1 stub left) → burn 1 → total 8, stubs = 1+1 = 2 → melt into 1 candle (0 left) → burn 1 → total 9, stubs = 1 → stop (stub count 1 < K=2, no candles left to burn). Final total = **9**.
+Final total burned = **9**.
