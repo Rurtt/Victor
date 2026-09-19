@@ -177,5 +177,80 @@ class LadderStateTests(unittest.TestCase):
                 memory.close()
 
 
+class DailyStoreTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.memory = Memory(Path(self.temp.name))
+
+    def tearDown(self):
+        self.memory.close()
+        self.temp.cleanup()
+
+    def test_compile_error_is_a_verdict(self):
+        pid = self.memory.upsert_problem("a-plus-b", "A+B")
+        self.memory.add_attempt(pid, "int main( {", verdict="CE")
+        self.assertEqual(self.memory.attempts(pid)[0]["verdict"], "CE")
+
+    def test_meta_round_trip(self):
+        m = self.memory
+        self.assertIsNone(m.get_meta("level"))
+        self.assertEqual(m.get_meta("level", "1"), "1")
+        m.set_meta("level", 3)
+        self.assertEqual(m.get_meta("level"), "3")
+
+    def test_daily_rows_report_graded_and_ac(self):
+        m = self.memory
+        a = m.upsert_problem("sum", "Sum", topic="implementation", source="camp1/sum")
+        b = m.upsert_problem("gcd", "GCD", topic="math", source="camp1/gcd")
+        m.add_daily("2026-09-20", "main", a, 1)
+        m.add_daily("2026-09-20", "warmup", b, 1)
+        m.add_attempt(a, "code", verdict="WA")
+        m.add_attempt(a, "code", verdict="AC")
+        m.add_attempt(b, "just an idea")
+        rows = m.daily_rows("2026-09-20")
+        self.assertEqual([r["role"] for r in rows], ["warmup", "main"])
+        self.assertEqual((rows[1]["ac"], rows[1]["graded"]), (True, True))
+        self.assertEqual((rows[0]["ac"], rows[0]["graded"]), (False, False))
+        self.assertEqual(rows[1]["source"], "camp1/sum")
+        self.assertEqual(m.daily_rows("2026-09-21"), [])
+        self.assertEqual(len(m.daily_rows()), 2)
+
+    def test_unsubmitted_verdicts_do_not_count_as_graded(self):
+        # Pasted-code-in-chat attempts record "unsubmitted" (archive sample-only
+        # AC); that must not count as a graded miss in the promotion window.
+        m = self.memory
+        a = m.upsert_problem("sum", "Sum", topic="implementation", source="archive/sum")
+        m.add_daily("2026-09-20", "main", a, 3)
+        m.add_attempt(a, "code", verdict="unsubmitted")
+        rows = m.daily_rows("2026-09-20")
+        self.assertEqual((rows[0]["ac"], rows[0]["graded"]), (False, False))
+
+    def test_add_daily_replaces_the_same_day_and_role(self):
+        m = self.memory
+        a = m.upsert_problem("sum", "Sum", source="camp1/sum")
+        m.add_daily("2026-09-20", "main", a, 1)
+        m.add_daily("2026-09-20", "main", a, 1)
+        self.assertEqual(len(m.daily_rows("2026-09-20")), 1)
+
+    def test_add_daily_rejects_an_unknown_role(self):
+        a = self.memory.upsert_problem("sum", "Sum")
+        with self.assertRaises(MemoryError):
+            self.memory.add_daily("2026-09-20", "bonus", a, 1)
+
+    def test_served_sources_ignore_problems_without_a_source(self):
+        m = self.memory
+        m.upsert_problem("sum", "Sum", source="camp1/sum")
+        m.upsert_problem("chat-problem", "Something from chat")
+        self.assertEqual(m.served_sources(), {"camp1/sum"})
+
+    def test_weak_topics_rank_topics_by_failures(self):
+        m = self.memory
+        dp = m.upsert_problem("knap", "Knap", topic="dp")
+        gr = m.upsert_problem("bfs", "BFS", topic="graph")
+        m.add_failures(m.add_attempt(dp, "x"), [{"tag": "wrong-state"}, {"tag": "off-by-one"}])
+        m.add_failures(m.add_attempt(gr, "y"), [{"tag": "off-by-one"}])
+        self.assertEqual(m.weak_topics(), ["dp", "graph"])
+
+
 if __name__ == "__main__":
     unittest.main()

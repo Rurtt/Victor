@@ -1,6 +1,7 @@
 """Victor desktop: explicit input, cloud chat and human-approved PC actions."""
 from __future__ import annotations
 
+from datetime import date
 import os
 from pathlib import Path
 import queue
@@ -16,9 +17,12 @@ import customtkinter as ctk
 from PIL import Image
 
 from actions import AUTO_RUN, DISCORD_LINK, DISCORD_MAX, DISCORD_PER_HOUR, ActionGate, WindowsActions, describe, PolicyError
+import bank
 from brain import MAX_INPUT, RETRYING, BrainError
+import daily
 import engine
 from engine import DEFAULT_MODEL, ask, ask_screen
+import grader
 import local_voice
 import mentor
 from engine import ask_mentor
@@ -27,12 +31,14 @@ import theme as T
 import tray as tray_ui
 import voice
 from local_store import LocalStore, StorageError
-from memory import Memory, MemoryError
+from memory import MAX_TEXT, Memory, MemoryError
 from thai import tr
 from vault import Vault, VaultError
 
 BASE = Path(__file__).resolve().parent
 STUDY_VAULT = Path(r"D:\Jarvis\Study")
+BANK = BASE / "problems"
+GRADE_WORD = "ตรวจ"
 MAX_SCREEN_STEPS = 25
 MAX_ROWS = 200
 PILL = {  # state: (text, text color, background)
@@ -79,7 +85,7 @@ class Tooltip:
 
 
 class VictorApp(ctk.CTk):
-    def __init__(self, store=None):
+    def __init__(self, store=None, daily_root=None):
         ctk.set_appearance_mode("dark")
         super().__init__(fg_color=T.BG)
         self.title(tr("Victor • Personal assistant"))
@@ -114,10 +120,24 @@ class VictorApp(ctk.CTk):
             self.study.catalogue()
         except (VaultError, OSError):
             self.study = None  # mentor mode still works, just without wiki context
+        # Tests pass their own store; they must never write into the real study vault.
+        if daily_root is None:
+            daily_root = (STUDY_VAULT / "daily" if store is None
+                          else self.store.directory.parent / "daily")
+        self.daily_root = Path(daily_root)
+        self.daily_notices = []
+        try:
+            self.bank = bank.load(BANK)
+        except (bank.BankError, OSError) as exc:
+            self.bank = []
+            self.daily_notices.append(str(exc))
+        self.bank_by_id = {e.id: e for e in self.bank}
+        self.today_seen = date.today()
         self.last_reply = ""
         self.events = queue.Queue()
         self.generation = 0
         self.busy = False
+        self._grade_thread = None
         self.listening = False
         self.speech_generation = 0
         self.recorder = voice.Recorder()
@@ -134,6 +154,7 @@ class VictorApp(ctk.CTk):
         self.wake = local_voice.WakeListener(
             lambda event, detail: self.events.put(("wake", 0, (event, detail))))
         self._build()
+        self.refresh_today()
         self.protocol("WM_DELETE_WINDOW", self.hide_to_tray)
         self.bind("<Escape>", lambda e: self.stop())
         self.bind("<Configure>", self.on_configure)
@@ -214,6 +235,8 @@ class VictorApp(ctk.CTk):
         self.mentor_switch.pack(anchor="w", padx=16, pady=(4, 0))
         if self.mentor_mode:
             self.mentor_switch.select()
+        self.today_card = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        self.today_card.pack(fill="x", padx=14, pady=(14, 0))
         self.button(self.sidebar, "Open program folder", self.open_program_folder).pack(side="bottom", fill="x", padx=14, pady=16)
         self.label(self.sidebar, "Chat history is saved on this PC.", T.HINT, T.MUTED,
                    justify="left").pack(side="bottom", anchor="w", padx=18, pady=(0, 12))
@@ -614,6 +637,9 @@ class VictorApp(ctk.CTk):
         """The post-call half of mentor_turn, on the Tk thread: record, withhold, show."""
         problem, override, verdict, ceiling = context
         target_id, granted = self.record_mentor_reply(prompt, problem, reply, override, verdict)
+        # Recorded before anything is shown: an AC or give-up from this turn
+        # must reach the Today card even if the reply below is withheld.
+        self.refresh_today()
         # With no problem to attribute the reply to (no current problem, model
         # named none, or a DB error left target_id unset), fall back to the
         # pre-call ceiling instead of trusting an unrecorded "granted".
@@ -656,14 +682,28 @@ class VictorApp(ctk.CTk):
                 # A give-up is the enforcement record (spec 5.4): the model
                 # cannot revive a given-up problem by proposing "working" again.
                 sticky_given_up = target is not None and target.get("status") == "given-up"
+                # The model may propose "given-up" on its own, but only the
+                # user's เปิดเฉลย (override) or an already given-up problem
+                # may actually store it (spec 5.4).
+                proposed = reply.problem.get("status", "working")
                 status = ("given-up" if (override or sticky_given_up)
-                          else reply.problem.get("status", "working"))
+                          else ("working" if proposed == "given-up" else proposed))
                 target_id = self.memory.upsert_problem(
                     reply.problem["slug"], reply.problem["title"],
                     topic=reply.problem.get("topic"), status=status)
             else:
                 target_id = problem["id"] if problem else None
                 target_stored = problem["rung"] if problem else 0
+                status = problem.get("status") if problem else None
+
+            # Python decides "solved", never the model: a typed AC verdict
+            # freezes the rung and moves current_problem on (spec 5), unless
+            # the problem is already given up.
+            if target_id and verdict == "AC" and status != "given-up":
+                slug = reply.problem["slug"] if reply.problem else problem["slug"]
+                title = reply.problem["title"] if reply.problem else problem["title"]
+                topic = reply.problem.get("topic") if reply.problem else problem.get("topic")
+                self.memory.upsert_problem(slug, title, topic=topic, status="solved")
 
             granted = target_stored  # fallback if a later write fails before this is recomputed
             target_attempts = self.memory.attempts(target_id) if target_id else []
@@ -707,10 +747,119 @@ class VictorApp(ctk.CTk):
         except (VaultError, OSError) as exc:
             self.add_message("ERROR", tr("Could not save to wiki: ") + str(exc))
 
+    # ---------- daily problems and grading ----------
+
+    def log_level_change(self, title, text):
+        if self.study:
+            try:
+                self.study.append_log("update", title, text)
+            except (VaultError, OSError):
+                pass  # ponytail: the level is already stored; the vault line is a courtesy
+
+    def refresh_today(self):
+        """Serve today's problems once, then redraw the Today card."""
+        today = date.today()
+        notices, rows = list(self.daily_notices), []
+        self.daily_notices = []
+        try:
+            notices += daily.ensure_today(self.memory, self.bank, self.daily_root, today,
+                                          log=self.log_level_change)
+            rows = self.memory.daily_rows(today.isoformat())
+        except (MemoryError, sqlite3.Error, OSError) as exc:
+            notices.append(str(exc))
+        for child in self.today_card.winfo_children():
+            child.destroy()
+        self.label(self.today_card, "TODAY", T.HINT, T.MUTED).pack(anchor="w")
+        for row in rows:
+            state = ("AC" if row["ac"] else
+                     "given up" if row["status"] == "given-up" else "working")
+            self.label(self.today_card, f"{row['role']} · L{row['level']} · {state}\n{row['title']}",
+                       T.LABEL, T.TEXT, justify="left", wraplength=180).pack(anchor="w", pady=(6, 2))
+            buttons = ctk.CTkFrame(self.today_card, fg_color="transparent")
+            buttons.pack(fill="x")
+            self.button(buttons, "Open", lambda r=row["role"]: self.open_daily(r),
+                        height=28).pack(side="left", expand=True, fill="x", padx=(0, 4))
+            self.button(buttons, "Grade", lambda r=row["role"]: self.start_grade(r),
+                        height=28).pack(side="left", expand=True, fill="x")
+        for notice in notices:
+            self.add_message("STATUS", notice)
+
+    def open_daily(self, role):
+        path = daily.folder(self.daily_root, date.today(), role)
+        if path.exists():
+            os.startfile(path)
+
+    def current_daily_role(self):
+        """Which of today's problems the mentor is on; main if it is on neither."""
+        current = self.memory.current_problem()
+        for row in self.memory.daily_rows(date.today().isoformat()):
+            if current and row["problem_id"] == current["id"]:
+                return row["role"]
+        return "main"
+
+    def start_grade(self, role, day=None):
+        """Grade one daily solution off the Tk thread. Returns the worker (for tests)."""
+        if self.busy or (self._grade_thread and self._grade_thread.is_alive()):
+            return None
+        day = day or date.today()
+        rows = {r["role"]: r for r in self.memory.daily_rows(day.isoformat())}
+        row = rows.get(role)
+        entry = self.bank_by_id.get(row["source"]) if row else None
+        if entry is None:
+            self.add_message("ERROR", "No problem to grade today.")
+            return None
+        self.silence()
+        self.discard_proposals()
+        self.generation += 1
+        generation = self.generation
+        self.busy = True
+        self.send_button.configure(state="disabled")
+        self.set_status("Grading…", "thinking")
+        folder = daily.folder(self.daily_root, day, role)
+        # A failing input is itself a hint: only warm-ups show it (spec 7).
+        show = role == "warmup" and entry.url is None
+        def work():
+            try:
+                result = grader.grade(folder, entry.tests, entry.time_limit, show_input=show,
+                                      cancelled=lambda: generation != self.generation)
+                self.events.put(("grade", generation, (row, entry, folder, result)))
+            except (grader.GraderError, OSError) as exc:
+                self.events.put(("error", generation, str(exc)))
+            except Exception:
+                self.events.put(("error", generation, "An unexpected grading error occurred."))
+        thread = threading.Thread(target=work, daemon=True)
+        self._grade_thread = thread
+        thread.start()
+        return thread
+
+    def finish_grade(self, row, entry, folder, result):
+        """Record the measured verdict, then let the ramp react to it."""
+        verdict, text = result.verdict, result.detail
+        if entry.url and verdict == "AC":
+            # Samples are not the judge: the real verdict comes from the user.
+            verdict, text = "unsubmitted", f"samples OK — submit at {entry.url}"
+        try:
+            body = (folder / "sol.cpp").read_text(encoding="utf-8", errors="replace")[:MAX_TEXT]
+            self.memory.add_attempt(row["problem_id"], body if body.strip() else "(empty)",
+                                    verdict=verdict)
+            if verdict == "AC" and row["status"] != "given-up":
+                self.memory.upsert_problem(row["slug"], row["title"], status="solved")
+            notice = daily.update_level(self.memory, date.today(), log=self.log_level_change)
+        except (MemoryError, sqlite3.Error, OSError) as exc:
+            self.add_message("ERROR", str(exc))
+            return
+        self.add_message("VICTOR", f"{row['title']}: {text}")
+        if notice:
+            self.add_message("STATUS", notice)
+        self.refresh_today()
+
     def retry_reporter(self, kind, generation):
         return lambda n, total: self.events.put((kind, generation, (n, total)))
 
     def submit(self, prompt, *, summary=False, display=None):
+        if self.mentor_mode and not summary and prompt.strip() == GRADE_WORD:
+            self.add_message("YOU", prompt)
+            return self.start_grade(self.current_daily_role())
         self.silence()
         self.speech_generation += 1
         self.mark_listening(False)
@@ -750,6 +899,9 @@ class VictorApp(ctk.CTk):
 
     def poll(self):
         self.after_cancel(self._poll_id)
+        if date.today() != self.today_seen:
+            self.today_seen = date.today()
+            self.refresh_today()
         try:
             while True:
                 kind, generation, value = self.events.get_nowait()
@@ -799,6 +951,9 @@ class VictorApp(ctk.CTk):
                     continue
                 if kind == "mentor":
                     self.finish_mentor_turn(*value)
+                    continue
+                if kind == "grade":
+                    self.finish_grade(*value)
                     continue
                 reply, prompt, summary = value
                 self.last_reply = reply.text

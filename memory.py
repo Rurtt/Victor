@@ -16,7 +16,8 @@ import sqlite3
 
 ROLES = ("user", "model")
 STATUSES = ("working", "solved", "given-up")
-VERDICTS = ("AC", "WA", "TLE", "RE", "unsubmitted")
+VERDICTS = ("AC", "WA", "TLE", "RE", "CE", "unsubmitted")
+DAILY_ROLES = ("main", "warmup")
 TOPICS = ("dp", "graph", "greedy", "geometry", "math", "string", "data-structure",
           "search", "sorting", "implementation", "number-theory", "tree", "flow",
           "game-theory")
@@ -62,6 +63,13 @@ CREATE TABLE IF NOT EXISTS failure (
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL);
+
+CREATE TABLE IF NOT EXISTS daily (
+  day TEXT NOT NULL,
+  role TEXT NOT NULL,
+  problem_id INTEGER NOT NULL REFERENCES problem(id),
+  level INTEGER NOT NULL,
+  PRIMARY KEY (day, role));
 
 CREATE INDEX IF NOT EXISTS turn_by_chat ON turn(chat_id, id);
 CREATE INDEX IF NOT EXISTS attempt_by_problem ON attempt(problem_id);
@@ -231,3 +239,53 @@ class Memory:
             " ORDER BY problem.updated DESC LIMIT ?",
             (topic, *tags, limit)).fetchall()
         return [dict(r) for r in rows]
+
+    # ---------- meta and the daily set ----------
+
+    def get_meta(self, key: str, default: str | None = None) -> str | None:
+        row = self.db.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else default
+
+    def set_meta(self, key: str, value):
+        with self.db:
+            self.db.execute("INSERT INTO meta (key, value) VALUES (?, ?)"
+                            " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                            (key, str(value)))
+
+    def served_sources(self) -> set[str]:
+        """Bank ids already handed out, so the daily pick never repeats one."""
+        rows = self.db.execute("SELECT source FROM problem WHERE source IS NOT NULL").fetchall()
+        return {r[0] for r in rows}
+
+    def weak_topics(self, limit: int = 3) -> list[str]:
+        """Topics ranked by how many failure tags the user has collected in them."""
+        rows = self.db.execute(
+            "SELECT problem.topic, COUNT(*) AS n FROM failure"
+            " JOIN attempt ON attempt.id = failure.attempt_id"
+            " JOIN problem ON problem.id = attempt.problem_id"
+            " WHERE problem.topic IS NOT NULL"
+            " GROUP BY problem.topic ORDER BY n DESC, problem.topic LIMIT ?",
+            (limit,)).fetchall()
+        return [r[0] for r in rows]
+
+    def add_daily(self, day: str, role: str, problem_id: int, level: int):
+        _one_of(role, DAILY_ROLES, "role")
+        with self.db:
+            # REPLACE: a serve interrupted halfway can simply be run again.
+            self.db.execute("INSERT OR REPLACE INTO daily (day, role, problem_id, level)"
+                            " VALUES (?, ?, ?, ?)", (day, role, problem_id, level))
+
+    def daily_rows(self, day: str | None = None) -> list[dict]:
+        """Served daily problems, oldest first (warm-up before main), with outcomes."""
+        where = " WHERE daily.day = ?" if day else ""
+        rows = self.db.execute(
+            "SELECT daily.day, daily.role, daily.level, problem.id AS problem_id,"
+            " problem.slug, problem.title, problem.source, problem.status, problem.rung,"
+            " EXISTS(SELECT 1 FROM attempt WHERE attempt.problem_id = problem.id"
+            "        AND attempt.verdict = 'AC') AS ac,"
+            " EXISTS(SELECT 1 FROM attempt WHERE attempt.problem_id = problem.id"
+            "        AND attempt.verdict IS NOT NULL AND attempt.verdict != 'unsubmitted') AS graded"
+            " FROM daily JOIN problem ON problem.id = daily.problem_id"
+            + where + " ORDER BY daily.day, daily.role DESC",
+            (day,) if day else ()).fetchall()
+        return [dict(r, ac=bool(r["ac"]), graded=bool(r["graded"])) for r in rows]

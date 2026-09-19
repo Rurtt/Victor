@@ -219,6 +219,63 @@ undone by one. The sixteen-message cap mentioned below under Access and data
 handling still governs only what is sent to the model each turn, not what is
 kept.
 
+## Daily practice
+
+With Mentor mode on, the sidebar's **TODAY** card serves two POSN-style problems a
+day — a **main** problem at your current level and an easier **warm-up** one level
+down — and never repeats a problem you've already been served. Each has **Open**
+(opens its folder) and **Grade** buttons. Your solutions live at
+`D:\Jarvis\Study\daily\<YYYY-MM-DD>\main\sol.cpp` and
+`D:\Jarvis\Study\daily\<YYYY-MM-DD>\warmup\sol.cpp` — code there in your own
+editor, then press Grade. Grading compiles with g++ and runs every test locally;
+the card shows `AC n/n` on success or `WA`/`TLE`/`RE`/`CE` on failure. A warm-up's
+first failing test shows its input too (if short enough); a main problem's does
+not, since seeing it would itself be a hint. Archive-sourced problems (level 3+)
+are graded only against their public samples and point you to the judge URL to
+submit for real.
+
+Typing **ตรวจ** by itself in Mentor mode grades whichever of today's problems you
+are currently on — the same action as pressing Grade, with no Claude call
+involved. With today's problems served and no problem otherwise in progress, an
+ordinary mentor-mode message that names no problem is attributed to today's main
+problem, so you can start typing about it without naming it first.
+
+Levels 1–5 track the POSN camps:
+
+| Level | Stage | Content |
+|-------|-------|---------|
+| 1 | Camp 1 | I/O, loops, conditionals, arrays, simple strings |
+| 2 | Camp 1 | sorting, simple math, brute force, prefix sums |
+| 3 | Camp 2 entry | binary search, greedy, basic DP, BFS/DFS |
+| 4 | Camp 2 | harder DP, Dijkstra, DSU, segment tree basics |
+| 5 | Camp 2 | full Camp-2 difficulty |
+
+The ramp is earned, never chosen by the model: level 1 moves to 2 after 3 ACs;
+Camp 1 (levels 1–2) moves into Camp 2 once at least 2 days have passed and 5 of
+your last 6 graded Camp-1 problems are AC, or unconditionally on the 4th day
+regardless of results, giving you 2–3 days of Camp 1 before Camp 2 starts;
+inside Camp 2, three main problems solved in a row with few hints steps you up a
+level, two give-ups (`เปิดเฉลย`) in a row step you back down (never below level
+3), and at most one level change happens per day.
+
+To grow the Camp-1 bank, run the offline generator from this folder, e.g.:
+
+```powershell
+python tools/make_problem.py --level 1 --topic implementation --count 5
+```
+
+It asks Claude for a candidate, verifies it by running a reference and a brute
+force against hundreds of random inputs, and only checks in problems where they
+agree — read each generated statement before committing it. To add Camp-2
+problems (real problems on public judges), edit `problems/archive.json` by hand:
+add an entry with `id`, `title`, `url`, `level` (3–5), `topic` and a couple of
+`samples`; check the URL loads before committing.
+
+If you've installed MSYS2's g++ for other work, note that a PATH entry of
+`C:\msys64\ucrt64\bin.` (trailing dot) is a known Windows quirk, not a typo to
+remove — the grader finds g++ by its absolute path regardless of PATH, so it
+works either way.
+
 ## Screen control (mouse and keyboard)
 
 Ask in chat, e.g. “เปิด Spotify แล้วกดเล่นเพลง”. Victor proposes `control_screen`;
@@ -298,13 +355,14 @@ Run from this folder:
 python -m unittest discover -s tests -v
 ```
 
-164 tests. They check fake approval flags, prohibited commands, URL validation,
+248 tests. They check fake approval flags, prohibited commands, URL validation,
 single-use approvals, cancellation, note containment, summary action rejection,
 HTTP credential handling, late responses, speech cancellation, provider routing
 by model ID, the refusal to send audio to the cloud in Claude mode, the tray
 message loop and instance guard, the hands-free wake-word turn, real Tk UI
 flows with simulated AI results and mocked PC effects, the mentor hint ladder
-and wiki-note flow, and conversation history persisting in `data/jarvis.db`.
+and wiki-note flow, the daily problem bank, grader and difficulty ramp, and
+conversation history persisting in `data/jarvis.db`.
 
 Not covered by the suite: a live Claude or Gemini reply, a real microphone
 capture, audible playback, an actual run of `scripts\install-voice.ps1`, and a
