@@ -96,3 +96,14 @@ class LoaderTests(unittest.TestCase):
         self.write_archive([ARCHIVE_ITEM, ARCHIVE_ITEM])
         with self.assertRaises(bank.BankError):
             bank.load(self.root)
+
+
+class CommittedBankTests(unittest.TestCase):
+    def test_camp1_bank_is_large_enough_for_the_first_days(self):
+        entries = [e for e in bank.load(ROOT / "problems") if e.url is None]
+        by_level = {level: [e for e in entries if e.level == level] for level in (1, 2)}
+        self.assertGreaterEqual(len(by_level[1]), 10)
+        self.assertGreaterEqual(len(by_level[2]), 10)
+        self.assertGreaterEqual(len({e.topic for e in entries}), 4)
+        for entry in entries:
+            self.assertGreaterEqual(len(entry.tests), 10, entry.id)
