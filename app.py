@@ -1,7 +1,7 @@
 """Victor desktop: explicit input, cloud chat and human-approved PC actions."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 import os
 from pathlib import Path
 import queue
@@ -138,6 +138,7 @@ class VictorApp(ctk.CTk):
         self.generation = 0
         self.busy = False
         self._grade_thread = None
+        self.pinned = None  # a file the mentor re-reads every turn until unpinned
         self.listening = False
         self.speech_generation = 0
         self.recorder = voice.Recorder()
@@ -280,6 +281,8 @@ class VictorApp(ctk.CTk):
         self.send_button.pack(side="right", padx=(4, 10), pady=10)
         self.listen_button = self.icon_button(self.composer, "●", "Dictate / stop", self.listen)
         self.listen_button.pack(side="right", padx=4, pady=10)
+        self.pin_button = self.icon_button(self.composer, "📎", "Show a file to Victor", self.pin_file)
+        self.pin_button.pack(side="right", padx=4, pady=10)
         self.input = ctk.CTkTextbox(self.composer, height=84, font=T.font(T.BODY), wrap="word",
                                     fg_color=T.SURFACE, text_color=T.TEXT, border_width=0, undo=True)
         self.input.pack(side="left", fill="both", expand=True, padx=(10, 4), pady=8)
@@ -293,6 +296,8 @@ class VictorApp(ctk.CTk):
         self.voice_row.pack(fill="x", pady=(8, 0))
         self.read_button = self.button(self.voice_row, "Read reply", self.read_reply, height=32)
         self.read_button.pack(side="left")
+        # Shown only while a file is pinned; clicking it unpins.
+        self.pin_chip = self.button(self.voice_row, "", self.unpin_file, height=32)
         self.speak_check = ctk.CTkSwitch(self.voice_row, text=tr("Speak replies"), variable=self.auto_speak,
                                          font=T.font(T.LABEL), text_color=T.MUTED, progress_color=T.PRIMARY,
                                          button_color=T.TEXT, button_hover_color=T.TEXT, fg_color=T.SURFACE_HI)
@@ -600,6 +605,7 @@ class VictorApp(ctk.CTk):
             similar = self.memory.similar_problems(topic, tags) if topic else []
             style_guide = self.study.style_guide() if self.study else ""
             pages = self.study.select(topic, tags) if (self.study and topic) else []
+            files = self.context_files(problem)
         except (MemoryError, sqlite3.Error, VaultError, OSError) as exc:
             self.events.put(("error", generation, str(exc)))  # poll() restores busy/status
             return None
@@ -618,7 +624,7 @@ class VictorApp(ctk.CTk):
         text = mentor.build_prompt(
             allowed=ceiling, problem=problem, attempts=attempts, profile=profile,
             similar=similar, style_guide=style_guide, pages=pages,
-            turns=self.history[-8:])
+            turns=self.history[-8:], files=files)
 
         context, model = (problem, override, verdict, ceiling), self.model
         def work():
@@ -632,6 +638,51 @@ class VictorApp(ctk.CTk):
         thread = threading.Thread(target=work, daemon=True)
         thread.start()
         return thread
+
+    def context_files(self, problem):
+        """Files the mentor sees this turn, re-read from disk so edits show up.
+
+        A daily problem brings its own statement and solution; a pinned file
+        rides along until unpinned. Only the user's typed text counts as an attempt.
+        """
+        paths = []
+        for row in self.memory.daily_rows() if problem else []:
+            if row["problem_id"] == problem["id"]:
+                folder = daily.folder(self.daily_root, date.fromisoformat(row["day"]), row["role"])
+                paths += [folder / "statement.md", folder / "sol.cpp"]
+        if self.pinned and self.pinned not in paths:
+            paths.append(self.pinned)
+        files = []
+        for path in paths:
+            try:
+                text = mentor.read_context_file(path)
+            except mentor.MentorError as exc:
+                if path == self.pinned:
+                    self.add_message("WARN", str(exc))
+                    self.unpin_file()
+                continue  # a daily file not written yet is simply absent
+            stamp = datetime.fromtimestamp(path.stat().st_mtime).strftime("%H:%M")
+            files.append((f"{path.name} ({path.parent.name}, บันทึก {stamp})", text))
+        return files
+
+    def pin_file(self):
+        name = filedialog.askopenfilename(parent=self, title=tr("Show a file to Victor"),
+                filetypes=[(tr("Code and text"), " ".join("*" + e for e in mentor.FILE_TYPES)),
+                           (tr("All files"), "*.*")])
+        if not name:
+            return
+        try:
+            mentor.read_context_file(name)
+        except mentor.MentorError as exc:
+            self.add_message("ERROR", str(exc))
+            return
+        self.pinned = Path(name)
+        self.pin_chip.configure(text=f"📎 {self.pinned.name}  ✕")
+        self.pin_chip.pack(side="left", padx=(12, 0))
+
+    def unpin_file(self):
+        self.pinned = None
+        self.pin_chip.pack_forget()
 
     def finish_mentor_turn(self, prompt, context, reply):
         """The post-call half of mentor_turn, on the Tk thread: record, withhold, show."""
@@ -1324,6 +1375,7 @@ class VictorApp(ctk.CTk):
         self.stop()
         self.memory.new_chat()  # the previous conversation is kept, not erased
         self.history.clear()
+        self.unpin_file()
         self.last_reply = ""
         for row, _text, _kind in self.bubbles:
             row.destroy()

@@ -860,5 +860,85 @@ class DailyCardTests(unittest.TestCase):
             self.assertFalse(r["graded"])
 
 
+
+class ContextFileAppTests(unittest.TestCase):
+    """Victor sees the code being discussed without the user pasting it."""
+
+    def setUp(self):
+        from bank import Entry
+        self.temp = tempfile.TemporaryDirectory()
+        entries = [Entry(id=f"camp1/p{n}", slug=f"p{n}", title=f"P{n}", level=1,
+                         topic="implementation", time_limit=1.0, statement="# STATEMENT P",
+                         tests=(("1", "1"),)) for n in range(4)]
+        with patch("app.bank.load", return_value=entries):
+            self.app = VictorApp(store=LocalStore(Path(self.temp.name)))
+        self.app.withdraw()
+        self.app.study = None
+        self.app.mentor_mode = True
+
+    def tearDown(self):
+        self.app.close()
+        self.temp.cleanup()
+
+    def sent(self, prompt="ช่วยดูหน่อย"):
+        import mentor
+        reply = mentor.MentorReply("ลองเล่าก่อน", 0, None, [], None)
+        with patch("app.ask_mentor", return_value=reply) as ask:
+            worker = self.app.mentor_turn(prompt)
+            worker.join(5)
+            self.app.poll()
+        return ask.call_args.args[1]
+
+    def main_folder(self):
+        from datetime import date
+        return self.app.daily_root / date.today().isoformat() / "main"
+
+    def test_the_daily_problem_sends_its_statement_and_live_solution(self):
+        self.sent()  # first turn attaches to today's main problem
+        (self.main_folder() / "sol.cpp").write_text("int main(){ /*EDITED*/ }", encoding="utf-8")
+        text = self.sent()
+        self.assertIn("STATEMENT P", text)
+        self.assertIn("/*EDITED*/", text)
+
+    def test_a_non_daily_problem_attaches_no_daily_files(self):
+        self.app.memory.upsert_problem("other-th", "Other", topic="dp")
+        text = self.sent()
+        self.assertNotIn("STATEMENT P", text)
+
+    def test_a_pinned_file_is_reread_every_turn_until_new_chat(self):
+        pinned = Path(self.temp.name) / "mine.cpp"
+        pinned.write_text("// VERSION ONE", encoding="utf-8")
+        with patch("app.filedialog.askopenfilename", return_value=str(pinned)):
+            self.app.pin_file()
+        self.assertIn("VERSION ONE", self.sent())
+        pinned.write_text("// VERSION TWO", encoding="utf-8")
+        self.assertIn("VERSION TWO", self.sent())
+        self.app.new_chat()
+        self.assertIsNone(self.app.pinned)
+        self.assertNotIn("VERSION TWO", self.sent())
+
+    def test_a_binary_file_is_refused_at_pin_time(self):
+        bad = Path(self.temp.name) / "a.exe"
+        bad.write_bytes(bytes([77, 90, 0]))
+        with patch("app.filedialog.askopenfilename", return_value=str(bad)):
+            self.app.pin_file()
+        self.assertIsNone(self.app.pinned)
+
+    def test_a_pinned_file_alone_does_not_count_as_an_attempt(self):
+        pinned = Path(self.temp.name) / "mine.cpp"
+        pinned.write_text("int main(){}", encoding="utf-8")
+        with patch("app.filedialog.askopenfilename", return_value=str(pinned)):
+            self.app.pin_file()
+        self.assertIn("ขั้นที่อนุญาตรอบนี้: 0", self.sent("ขอคำใบ้"))
+
+    def test_a_deleted_pinned_file_unpins_instead_of_failing_the_turn(self):
+        pinned = Path(self.temp.name) / "gone.cpp"
+        pinned.write_text("x", encoding="utf-8")
+        with patch("app.filedialog.askopenfilename", return_value=str(pinned)):
+            self.app.pin_file()
+        pinned.unlink()
+        self.sent()
+        self.assertIsNone(self.app.pinned)
+
 if __name__ == "__main__":
     unittest.main()
