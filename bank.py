@@ -82,7 +82,7 @@ def _archive(item) -> Entry:
                and isinstance(s.get("out"), str) for s in samples):
         raise BankError(f"{item.get('id')}: samples must be {{in, out}} strings")
     # Archive items must have a URL (unlike Camp-1 which can be None)
-    if "url" not in item:
+    if not item.get("url"):
         raise BankError(f"{item.get('id')}: archive item must have a url key")
     ident, title = str(item.get("id", "")), str(item.get("title", ""))
     lines = [f"# {title}", "",

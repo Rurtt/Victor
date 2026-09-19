@@ -215,6 +215,16 @@ class DailyStoreTests(unittest.TestCase):
         self.assertEqual(m.daily_rows("2026-09-21"), [])
         self.assertEqual(len(m.daily_rows()), 2)
 
+    def test_unsubmitted_verdicts_do_not_count_as_graded(self):
+        # Pasted-code-in-chat attempts record "unsubmitted" (archive sample-only
+        # AC); that must not count as a graded miss in the promotion window.
+        m = self.memory
+        a = m.upsert_problem("sum", "Sum", topic="implementation", source="archive/sum")
+        m.add_daily("2026-09-20", "main", a, 3)
+        m.add_attempt(a, "code", verdict="unsubmitted")
+        rows = m.daily_rows("2026-09-20")
+        self.assertEqual((rows[0]["ac"], rows[0]["graded"]), (False, False))
+
     def test_add_daily_replaces_the_same_day_and_role(self):
         m = self.memory
         a = m.upsert_problem("sum", "Sum", source="camp1/sum")

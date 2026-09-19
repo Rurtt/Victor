@@ -92,6 +92,12 @@ class LoaderTests(unittest.TestCase):
         with self.assertRaises(bank.BankError):
             bank.load(self.root)
 
+    def test_archive_rejects_a_null_url(self):
+        # A present-but-null url key must be rejected the same as a missing key.
+        self.write_archive([dict(ARCHIVE_ITEM, url=None)])
+        with self.assertRaises(bank.BankError):
+            bank.load(self.root)
+
     def test_duplicate_ids_are_rejected(self):
         self.write_archive([ARCHIVE_ITEM, ARCHIVE_ITEM])
         with self.assertRaises(bank.BankError):

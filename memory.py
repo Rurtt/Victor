@@ -284,7 +284,7 @@ class Memory:
             " EXISTS(SELECT 1 FROM attempt WHERE attempt.problem_id = problem.id"
             "        AND attempt.verdict = 'AC') AS ac,"
             " EXISTS(SELECT 1 FROM attempt WHERE attempt.problem_id = problem.id"
-            "        AND attempt.verdict IS NOT NULL) AS graded"
+            "        AND attempt.verdict IS NOT NULL AND attempt.verdict != 'unsubmitted') AS graded"
             " FROM daily JOIN problem ON problem.id = daily.problem_id"
             + where + " ORDER BY daily.day, daily.role DESC",
             (day,) if day else ()).fetchall()

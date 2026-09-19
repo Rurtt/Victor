@@ -50,7 +50,7 @@ def next_level(level, rows, *, today, camp1_started, last_change):
     since = last_change.isoformat() if last_change else ""
     outcomes = [("given-up" if r["status"] == "given-up" else "solved", r["rung"])
                 for r in rows
-                if r["role"] == "main" and r["level"] == level and r["day"] > since
+                if r["role"] == "main" and r["level"] >= level and r["day"] >= since
                 and (r["status"] == "given-up" or r["ac"])]
     tail = outcomes[-STEP_UP_STREAK:]
     if (level < MAX_LEVEL and len(tail) == STEP_UP_STREAK

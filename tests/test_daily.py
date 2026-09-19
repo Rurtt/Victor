@@ -87,6 +87,20 @@ class NextLevelTests(unittest.TestCase):
         rows = [row(change - timedelta(i), level=3, ac=True) for i in range(3)]
         self.assertEqual(self.step(3, rows, change + timedelta(1), last_change=change)[0], 3)
 
+    def test_the_level_change_day_itself_counts_toward_step_up(self):
+        # last_level_change is stamped before that day's main is served, so the
+        # main served on the change day itself must still count toward the ramp.
+        change = D0 + timedelta(3)
+        rows = [row(change + timedelta(i), level=3, ac=True, rung=2) for i in range(3)]
+        self.assertEqual(self.step(3, rows, change + timedelta(3), last_change=change)[0], 4)
+
+    def test_mains_from_a_harder_fallback_level_count_toward_step_up(self):
+        # A fallback serve (empty level) lands on the neighbouring harder level;
+        # those solves must still count toward the current level's ramp.
+        change = D0 + timedelta(3)
+        rows = [row(change + timedelta(i + 1), level=4, ac=True, rung=2) for i in range(3)]
+        self.assertEqual(self.step(3, rows, change + timedelta(4), last_change=change)[0], 4)
+
 
 class ServeTests(unittest.TestCase):
     def setUp(self):
