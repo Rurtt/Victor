@@ -169,3 +169,26 @@ class ServeTests(unittest.TestCase):
     def test_folder_rejects_unknown_roles(self):
         with self.assertRaises(ValueError):
             daily.folder(self.root, D0, "..")
+
+    def test_half_served_day_is_recovered_without_reserving(self):
+        # Simulate crash: day is in daily table but last_daily not set
+        entries = [entry(s, 1) for s in ("a", "b", "c")]
+        problem_id = self.memory.upsert_problem("a", "A", source="camp1/a")
+        self.memory.add_daily(D0.isoformat(), "main", problem_id, 1)
+        # Now serve on same day without last_daily set
+        notices = self.serve(entries)
+        rows = self.memory.daily_rows(D0.isoformat())
+        # Should not have picked new problems; only the one we seeded
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["source"], "camp1/a")
+        self.assertEqual(self.memory.get_meta("last_daily"), D0.isoformat())
+        self.assertEqual(notices, [])
+
+    def test_missing_warmup_is_reported(self):
+        # Only one level-1 problem: no room for a warmup
+        entries = [entry("solo", 1)]
+        notices = self.serve(entries)
+        rows = self.memory.daily_rows(D0.isoformat())
+        # Main is served, warmup is not
+        self.assertEqual([r["role"] for r in rows], ["main"])
+        self.assertTrue(any("No warm-up problem left" in n for n in notices))

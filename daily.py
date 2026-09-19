@@ -119,6 +119,10 @@ def ensure_today(memory, entries, root, today, *, rng=None, log=lambda title, te
     day = today.isoformat()
     if memory.get_meta("last_daily") == day:
         return []
+    # ponytail: recover from crash between add_daily and set_meta("last_daily")
+    if memory.daily_rows(day):
+        memory.set_meta("last_daily", day)
+        return []
     rng = rng or random.Random()
     if memory.get_meta("camp1_started") is None:
         memory.set_meta("camp1_started", day)
@@ -131,6 +135,8 @@ def ensure_today(memory, entries, root, today, *, rng=None, log=lambda title, te
     if main.level != level:
         notices.append(f"No level-{level} problems left; today's main is level {main.level}.")
     warmup = _pick_near(entries, max(1, level - 1), served, weak, rng, exclude={main.id})
+    if warmup is None:
+        notices.append("No warm-up problem left in the bank.")
     picked = [("warmup", warmup), ("main", main)] if warmup else [("main", main)]
     for role, item in picked:  # every folder first, so a disk error leaves no DB rows
         write_folder(root, today, role, item)
